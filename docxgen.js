@@ -1,0 +1,219 @@
+/* docxgen.js — builds a Word document in the browser from app state.
+   Browser port of the Node builder: same page size, margins, fonts and spacing,
+   so what you download here matches the desktop pipeline's output. */
+
+(function (global) {
+  "use strict";
+
+  const {
+    Document, Packer, Paragraph, TextRun, ExternalHyperlink,
+    AlignmentType, TabStopType, BorderStyle, LevelFormat,
+  } = global.docx;
+
+  const PAGE = { width: 12240, height: 15840 };   // US Letter, in DXA (1440 = 1in)
+  const MARGIN = 720;                              // 0.5in
+  const TEXT_WIDTH = PAGE.width - MARGIN * 2;
+
+  const FONT = "Times New Roman";
+  // Half-points: 21 = 10.5pt. Times runs small, so body sits a touch above 10pt.
+  const SIZE = { body: 21, name: 34, heading: 23 };
+
+  // `**bold**`, `*italic*`, `[label](url)` -> runs
+  function inline(text, base) {
+    base = base || {};
+    const out = [];
+    const re = /\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
+    let last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) out.push(new TextRun(Object.assign({}, base, { text: text.slice(last, m.index) })));
+      if (m[1] !== undefined) out.push(new TextRun(Object.assign({}, base, { text: m[1], bold: true })));
+      else if (m[2] !== undefined) out.push(new TextRun(Object.assign({}, base, { text: m[2], italics: true })));
+      else out.push(new ExternalHyperlink({
+        link: m[4],
+        children: [new TextRun(Object.assign({}, base, { text: m[3], style: "Hyperlink" }))],
+      }));
+      last = re.lastIndex;
+    }
+    if (last < text.length) out.push(new TextRun(Object.assign({}, base, { text: text.slice(last) })));
+    return out.length ? out : [new TextRun(Object.assign({}, base, { text: "" }))];
+  }
+
+  const runOpts = { size: SIZE.body, font: FONT };
+
+  function sectionHeading(text) {
+    return new Paragraph({
+      spacing: { before: 200, after: 50 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000", space: 2 } },
+      children: [new TextRun({
+        text: text.toUpperCase(), bold: true, size: SIZE.heading, font: FONT, characterSpacing: 20,
+      })],
+    });
+  }
+
+  // Bold label on the left, dates right-aligned on the same line.
+  function headWithDates(label, dates) {
+    const kids = inline(label, Object.assign({}, runOpts, { bold: true }));
+    if (dates) {
+      kids.push(new TextRun({ text: "\t", size: SIZE.body }));
+      kids.push(new TextRun({ text: dates, size: SIZE.body, font: FONT }));
+    }
+    return new Paragraph({
+      tabStops: [{ type: TabStopType.RIGHT, position: TEXT_WIDTH }],
+      spacing: { before: 110, after: 0 },
+      children: kids,
+    });
+  }
+
+  function subtitle(text) {
+    return new Paragraph({
+      spacing: { before: 0, after: 30 },
+      children: inline(text, Object.assign({}, runOpts, { italics: true })),
+    });
+  }
+
+  function bullet(text) {
+    return new Paragraph({
+      numbering: { reference: "tailor-bullets", level: 0 },
+      spacing: { before: 0, after: 30, line: 240 },
+      children: inline(text, runOpts),
+    });
+  }
+
+  function header(state) {
+    const p = [];
+    const nameText = state.profile.credential
+      ? state.profile.name + ", " + state.profile.credential
+      : state.profile.name;
+
+    p.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 50 },
+      children: [new TextRun({
+        text: nameText, bold: true, size: SIZE.name, font: FONT, characterSpacing: 30,
+      })],
+    }));
+
+    // Contact details and links share one centered line.
+    const kids = [];
+    const sep = () => new TextRun({ text: "  |  ", size: SIZE.body, font: FONT });
+    (state.profile.contact || []).filter(Boolean).forEach((c) => {
+      if (kids.length) kids.push(sep());
+      kids.push(new TextRun({ text: c, size: SIZE.body, font: FONT }));
+    });
+    (state.profile.links || []).forEach((l) => {
+      if (!l.url) return;
+      if (kids.length) kids.push(sep());
+      kids.push(new ExternalHyperlink({
+        link: l.url,
+        children: [new TextRun({ text: l.label || l.url, size: SIZE.body, font: FONT, style: "Hyperlink" })],
+      }));
+    });
+    if (kids.length) {
+      p.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 40 }, children: kids }));
+    }
+    return p;
+  }
+
+  /** Build a Document from app state plus the set of chosen bullet keys. */
+  function build(state, chosen) {
+    const kids = header(state);
+
+    if (state.summary && state.summary.trim()) {
+      kids.push(sectionHeading("Summary"));
+      kids.push(new Paragraph({
+        spacing: { before: 30, after: 50, line: 240 },
+        alignment: AlignmentType.JUSTIFIED,
+        children: inline(state.summary, runOpts),
+      }));
+    }
+
+    const skills = (state.skills || []).filter((g) => g.name && g.items);
+    if (skills.length) {
+      kids.push(sectionHeading("Technical Skills"));
+      skills.forEach((g) => {
+        kids.push(new Paragraph({
+          spacing: { before: 15, after: 15, line: 240 },
+          indent: { left: 180, hanging: 180 },
+          children: [
+            new TextRun({ text: g.name + ": ", bold: true, size: SIZE.body, font: FONT }),
+          ].concat(inline(g.items, runOpts)),
+        }));
+      });
+    }
+
+    // Only positions with at least one selected bullet appear.
+    const positions = (state.positions || [])
+      .map((pos, pi) => ({
+        pos,
+        bullets: (pos.bullets || []).filter((_, bi) => chosen.has("p" + pi + "b" + bi)),
+      }))
+      .filter((x) => x.bullets.length);
+
+    if (positions.length) {
+      kids.push(sectionHeading("Experience"));
+      positions.forEach(({ pos, bullets }) => {
+        kids.push(headWithDates(pos.theme || pos.role || "", pos.dates));
+        const sub = [pos.theme ? pos.role : "", pos.org, pos.location].filter(Boolean).join(" — ");
+        if (sub) kids.push(subtitle(sub));
+        bullets.forEach((b) => kids.push(bullet(b.text)));
+      });
+    }
+
+    const projects = (state.projects || []).filter((_, i) => chosen.has("j" + i));
+    if (projects.length) {
+      kids.push(sectionHeading("Selected Projects"));
+      projects.forEach((p) => kids.push(bullet(p.text)));
+    }
+
+    const edu = (state.education || []).filter((e) => e.degree);
+    if (edu.length) {
+      kids.push(sectionHeading("Education"));
+      edu.forEach((e) => {
+        kids.push(headWithDates(e.degree, e.dates));
+        (e.details || []).filter(Boolean).forEach((d) => kids.push(bullet(d)));
+      });
+    }
+
+    return new Document({
+      creator: state.profile.name || "Tailor",
+      title: (state.profile.name || "Resume") + " — Resume",
+      numbering: {
+        config: [{
+          reference: "tailor-bullets",
+          levels: [{
+            level: 0,
+            format: LevelFormat.BULLET,
+            text: "•",
+            alignment: AlignmentType.LEFT,
+            style: { paragraph: { indent: { left: 200, hanging: 160 } } },
+          }],
+        }],
+      },
+      styles: { default: { document: { run: { font: FONT, size: SIZE.body } } } },
+      sections: [{
+        properties: {
+          page: {
+            size: { width: PAGE.width, height: PAGE.height },
+            margin: { top: MARGIN, right: MARGIN, bottom: MARGIN, left: MARGIN },
+          },
+        },
+        children: kids,
+      }],
+    });
+  }
+
+  /** Build and trigger a download. */
+  async function download(state, chosen) {
+    const blob = await Packer.toBlob(build(state, chosen));
+    const safe = (state.profile.name || "Resume").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = safe + "_Resume.docx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
+  global.DocxGen = { build, download, inline };
+})(window);

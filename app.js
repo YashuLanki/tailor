@@ -1,0 +1,516 @@
+/* app.js — state, JD matching, budget audit, live preview.
+   No network calls. State persists to localStorage only. */
+
+(function () {
+  "use strict";
+
+  const KEY = "tailor.v1";
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // ── length budgets, mirroring the desktop pipeline ──
+  const BUDGET = {
+    bullet: { l1: [105, 122], l2: [195, 230] },
+    summary: { 1: [290, 400], 2: [480, 560] },
+    skillLine: 115,
+    theme: 62,
+  };
+
+  /** Visible length: strip the **bold**, *italic* and [label](url) markers. */
+  function plain(t) {
+    return String(t || "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+      .trim();
+  }
+  const len = (t) => plain(t).length;
+
+  /** Grade a bullet: under one line, a clean two-liner, or overflowing. */
+  function gradeBullet(t) {
+    const n = len(t);
+    if (!n) return { n, cls: "", label: "" };
+    if (n <= BUDGET.bullet.l1[1]) return { n, cls: "ok", label: n + " · 1 line" };
+    if (n < BUDGET.bullet.l2[0]) return { n, cls: "warn", label: n + " · thin 2nd line" };
+    if (n <= BUDGET.bullet.l2[1]) return { n, cls: "ok", label: n + " · 2 lines" };
+    return { n, cls: "bad", label: n + " · over" };
+  }
+
+  // ── state ──
+  const blank = () => ({
+    profile: { name: "", credential: "", contact: [], links: [] },
+    summary: "",
+    skills: [{ name: "", items: "" }],
+    positions: [{ theme: "", role: "", org: "", location: "", dates: "", bullets: [{ text: "" }] }],
+    projects: [],
+    education: [{ degree: "", dates: "", details: [] }],
+    pages: 1,
+  });
+
+  let state = blank();
+  let chosen = new Set();      // keys of bullets/projects included in the resume
+  let keywords = [];           // [{term, count}] from the JD
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify({ state, chosen: [...chosen] })); } catch (e) { /* quota */ }
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return false;
+      const d = JSON.parse(raw);
+      state = Object.assign(blank(), d.state);
+      chosen = new Set(d.chosen || []);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // ─────────────────────────── JD matching ───────────────────────────
+
+  const STOP = new Set(("a an the and or but if then than that this these those of in on at to for with from by as is are was were be been being will would can could should may might must have has had do does did not no nor so such own same too very just about into over under again further once here there when where why how all any both each few more most other some only own s t don now you your yours we our ours they their them he she his her it its i me my mine us who whom which what while also across per within without upon via etc e g ie eg role team work working works job position candidate applicant company please apply application experience experienced years year including include includes included ability able strong excellent good great new using use used uses provide provides providing support supports supporting help helps helping ensure ensures ensuring related requirements required require requires preferred plus etc").split(/\s+/));
+
+  /** Pull ranked terms out of the JD: single words plus common bigrams. */
+  function extractKeywords(text) {
+    const words = String(text).toLowerCase()
+      .replace(/[^a-z0-9+#./\- ]+/g, " ")
+      .split(/\s+/)
+      .map((w) => w.replace(/^[-./]+|[-./]+$/g, ""))
+      .filter((w) => w.length > 1);
+
+    const uni = new Map();
+    words.forEach((w) => {
+      if (STOP.has(w) || /^\d+$/.test(w) || w.length < 3) return;
+      uni.set(w, (uni.get(w) || 0) + 1);
+    });
+
+    // Bigrams whose halves are both meaningful ("data science", "power bi")
+    const bi = new Map();
+    for (let i = 0; i < words.length - 1; i++) {
+      const a = words[i], b = words[i + 1];
+      if (STOP.has(a) || STOP.has(b) || a.length < 3 || b.length < 2) continue;
+      const g = a + " " + b;
+      bi.set(g, (bi.get(g) || 0) + 1);
+    }
+
+    const terms = [];
+    bi.forEach((c, g) => { if (c >= 2) terms.push({ term: g, count: c, n: 2 }); });
+    // Drop unigrams already covered by a kept bigram.
+    const inBigram = new Set();
+    terms.forEach((t) => t.term.split(" ").forEach((w) => inBigram.add(w)));
+    uni.forEach((c, w) => { if (!inBigram.has(w) || c >= 4) terms.push({ term: w, count: c, n: 1 }); });
+
+    return terms
+      .sort((x, y) => (y.count * y.n) - (x.count * x.n) || y.count - x.count)
+      .slice(0, 45);
+  }
+
+  /** All bullets and projects, flattened with a stable key and a source label. */
+  function allItems() {
+    const out = [];
+    (state.positions || []).forEach((p, pi) => {
+      (p.bullets || []).forEach((b, bi) => {
+        if (!plain(b.text)) return;
+        out.push({ key: "p" + pi + "b" + bi, text: b.text, src: p.org || p.role || p.theme || "Experience" });
+      });
+    });
+    (state.projects || []).forEach((p, i) => {
+      if (!plain(p.text)) return;
+      out.push({ key: "j" + i, text: p.text, src: "Project" });
+    });
+    return out;
+  }
+
+  /** Score an item by which JD terms it contains, weighted by term frequency. */
+  function scoreItem(text, terms) {
+    const hay = " " + plain(text).toLowerCase().replace(/[^a-z0-9+#./ ]+/g, " ") + " ";
+    let score = 0;
+    const hits = [];
+    terms.forEach((t) => {
+      if (hay.indexOf(" " + t.term) !== -1 || hay.indexOf(t.term + " ") !== -1) {
+        score += t.count * t.n;
+        hits.push(t.term);
+      }
+    });
+    return { score, hits };
+  }
+
+  function runMatch() {
+    const jd = $("#f-jd").value.trim();
+    if (!jd) { $("#match-note").textContent = "Paste a job description first."; return; }
+
+    keywords = extractKeywords(jd);
+    const items = allItems();
+    if (!items.length) {
+      $("#match-note").textContent = "Add some experience bullets in the Library tab first.";
+      return;
+    }
+
+    const scored = items.map((it) => Object.assign({}, it, scoreItem(it.text, keywords)))
+      .sort((a, b) => b.score - a.score);
+    const max = scored[0].score || 1;
+
+    // Auto-select anything with a real match; user adjusts from there.
+    scored.forEach((s) => { if (s.score >= max * 0.35 && s.score > 0) chosen.add(s.key); });
+
+    $("#kw-cloud").innerHTML = keywords.slice(0, 30)
+      .map((t) => '<span class="chip' + (t.count >= 3 ? " hot" : "") + '">' + esc(t.term) + " ·" + t.count + "</span>")
+      .join("");
+    $("#kw-card").hidden = false;
+
+    $("#match-list").innerHTML = scored.map((s) => {
+      const tier = s.score >= max * 0.6 ? "s3" : s.score >= max * 0.3 ? "s2" : s.score > 0 ? "s1" : "s0";
+      return '<div class="match">' +
+        '<input type="checkbox" data-key="' + s.key + '"' + (chosen.has(s.key) ? " checked" : "") + '>' +
+        '<div class="body"><div class="src">' + esc(s.src) + "</div>" +
+        '<div class="txt">' + highlight(s.text, s.hits) + "</div></div>" +
+        '<span class="score ' + tier + '">' + s.score + "</span></div>";
+    }).join("");
+    $("#match-card").hidden = false;
+
+    // Terms the JD stresses that no bullet mentions.
+    const covered = new Set();
+    scored.forEach((s) => s.hits.forEach((h) => covered.add(h)));
+    const gaps = keywords.filter((t) => !covered.has(t.term) && t.count >= 2).slice(0, 24);
+    $("#gap-cloud").innerHTML = gaps.length
+      ? gaps.map((t) => '<span class="chip gap">' + esc(t.term) + "</span>").join("")
+      : '<span class="hint">Your bullets touch every frequent term in this posting.</span>';
+    $("#gap-card").hidden = false;
+
+    const n = scored.filter((s) => chosen.has(s.key)).length;
+    $("#match-note").textContent = keywords.length + " terms found · " + n + " bullets selected";
+    save();
+    render();
+  }
+
+  function highlight(text, hits) {
+    let s = esc(plain(text));
+    hits.slice().sort((a, b) => b.length - a.length).forEach((h) => {
+      s = s.replace(new RegExp("(" + h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi"), "<mark>$1</mark>");
+    });
+    return s;
+  }
+
+  // ─────────────────────────── Library UI ───────────────────────────
+
+  function fieldRow(label, val, path, ph) {
+    return '<label>' + label + '<input value="' + esc(val || "") + '" data-path="' + path +
+      '" placeholder="' + esc(ph || "") + '"></label>';
+  }
+
+  function renderSkills() {
+    $("#skills-list").innerHTML = (state.skills || []).map((g, i) => {
+      const n = len((g.name ? g.name + ": " : "") + g.items);
+      const cls = n > BUDGET.skillLine ? "bad" : n ? "ok" : "";
+      return '<div class="item"><div class="item-head"><strong>Group ' + (i + 1) + "</strong>" +
+        '<span class="bullet-meta ' + cls + '">' + (n ? n + "/" + BUDGET.skillLine : "") + "</span>" +
+        '<button class="mini" data-del="skill:' + i + '" type="button">Remove</button></div>' +
+        fieldRow("Label", g.name, "skills." + i + ".name", "Languages & Query") +
+        '<label>Items <span class="hint">comma-separated</span>' +
+        '<input value="' + esc(g.items || "") + '" data-path="skills.' + i + '.items" ' +
+        'placeholder="**Python**, SQL, Excel"></label></div>';
+    }).join("");
+  }
+
+  function renderPositions() {
+    $("#positions-list").innerHTML = (state.positions || []).map((p, i) => {
+      const tn = len(p.theme || p.role);
+      return '<div class="item"><div class="item-head"><strong>Position ' + (i + 1) + "</strong>" +
+        '<span class="bullet-meta ' + (tn > BUDGET.theme ? "bad" : "") + '">' +
+        (tn ? "heading " + tn + "/" + BUDGET.theme : "") + "</span>" +
+        '<button class="mini" data-del="position:' + i + '" type="button">Remove</button></div>' +
+        '<div class="grid2">' +
+        fieldRow("Heading <span class='hint'>the JD-facing theme</span>", p.theme, "positions." + i + ".theme", "Reporting Automation") +
+        fieldRow("Dates", p.dates, "positions." + i + ".dates", "June 2024 – Present") +
+        "</div><div class='grid2'>" +
+        fieldRow("Job title", p.role, "positions." + i + ".role", "Data Analyst") +
+        fieldRow("Organization", p.org, "positions." + i + ".org", "Company") +
+        "</div>" +
+        fieldRow("Location", p.location, "positions." + i + ".location", "Phoenix, AZ") +
+        '<div class="bullets">' + (p.bullets || []).map((b, bi) => {
+          const g = gradeBullet(b.text);
+          return '<div class="bullet-row">' +
+            '<textarea rows="2" data-path="positions.' + i + ".bullets." + bi + '.text" ' +
+            'placeholder="Action, what you built, and the result.">' + esc(b.text || "") + "</textarea>" +
+            '<span class="bullet-meta ' + g.cls + '">' + g.label + "</span>" +
+            '<button class="mini" data-del="bullet:' + i + ":" + bi + '" type="button">×</button></div>';
+        }).join("") + "</div>" +
+        '<button class="add" data-add="bullet:' + i + '" type="button">+ Add bullet</button></div>';
+    }).join("");
+  }
+
+  function renderProjects() {
+    $("#projects-list").innerHTML = (state.projects || []).map((p, i) => {
+      const g = gradeBullet(p.text);
+      return '<div class="bullet-row">' +
+        '<textarea rows="2" data-path="projects.' + i + '.text" ' +
+        'placeholder="**Project name** (tools) — what it does.">' + esc(p.text || "") + "</textarea>" +
+        '<span class="bullet-meta ' + g.cls + '">' + g.label + "</span>" +
+        '<button class="mini" data-del="project:' + i + '" type="button">×</button></div>';
+    }).join("");
+  }
+
+  function renderEducation() {
+    $("#education-list").innerHTML = (state.education || []).map((e, i) =>
+      '<div class="item"><div class="item-head"><strong>Degree ' + (i + 1) + "</strong>" +
+      '<button class="mini" data-del="education:' + i + '" type="button">Remove</button></div><div class="grid2">' +
+      fieldRow("Degree and school", e.degree, "education." + i + ".degree", "M.S., Statistics — State University") +
+      fieldRow("Dates", e.dates, "education." + i + ".dates", "2022 – 2024") +
+      "</div></div>").join("");
+  }
+
+  function renderLibrary() {
+    $("#f-name").value = state.profile.name || "";
+    $("#f-cred").value = state.profile.credential || "";
+    $("#f-contact").value = (state.profile.contact || []).join(", ");
+    $("#f-links").value = (state.profile.links || []).map((l) => l.label + " | " + l.url).join("\n");
+    $("#f-summary").value = state.summary || "";
+    $("#f-pages").value = String(state.pages || 1);
+    renderSkills(); renderPositions(); renderProjects(); renderEducation();
+    updateSummaryCount();
+  }
+
+  function updateSummaryCount() {
+    const n = len(state.summary);
+    const [lo, hi] = BUDGET.summary[state.pages] || BUDGET.summary[1];
+    const el = $("#sum-count");
+    el.textContent = n + " chars · target " + lo + "–" + hi;
+    el.style.color = !n ? "" : (n < lo || n > hi) ? "var(--warn)" : "var(--good)";
+  }
+
+  // ─────────────────────────── preview + audit ───────────────────────────
+
+  function md(t) {
+    return esc(plain(String(t)))
+      .replace(/&lt;/g, "&lt;");   // plain() already stripped markers; keep text literal
+  }
+  /** Render markers as HTML for the preview. */
+  function mdHtml(t) {
+    let s = esc(String(t || ""));
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+         .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+         .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    return s;
+  }
+
+  function render() {
+    const s = state, out = [];
+    const nameLine = s.profile.credential ? s.profile.name + ", " + s.profile.credential : s.profile.name;
+    out.push('<p class="r-name">' + esc(nameLine || "Your Name") + "</p>");
+
+    const bits = (s.profile.contact || []).filter(Boolean).map(esc)
+      .concat((s.profile.links || []).filter((l) => l.url)
+        .map((l) => '<a href="' + esc(l.url) + '">' + esc(l.label || l.url) + "</a>"));
+    if (bits.length) out.push('<p class="r-contact">' + bits.join("  |  ") + "</p>");
+
+    if (plain(s.summary)) {
+      out.push("<h3>Summary</h3><p class='r-sum'>" + mdHtml(s.summary) + "</p>");
+    }
+
+    const skills = (s.skills || []).filter((g) => g.name || g.items);
+    if (skills.length) {
+      out.push("<h3>Technical Skills</h3>");
+      skills.forEach((g) => {
+        const over = len((g.name ? g.name + ": " : "") + g.items) > BUDGET.skillLine;
+        out.push('<p class="r-skill' + (over ? " over" : "") + '"><strong>' + esc(g.name) + ":</strong> " +
+          mdHtml(g.items) + "</p>");
+      });
+    }
+
+    const positions = (s.positions || []).map((p, pi) => ({
+      p, bl: (p.bullets || []).filter((b, bi) => chosen.has("p" + pi + "b" + bi) && plain(b.text)),
+    })).filter((x) => x.bl.length);
+
+    if (positions.length) {
+      out.push("<h3>Experience</h3>");
+      positions.forEach(({ p, bl }) => {
+        out.push('<p class="r-head"><span>' + mdHtml(p.theme || p.role) + "</span><span>" + esc(p.dates || "") + "</span></p>");
+        const sub = [p.theme ? p.role : "", p.org, p.location].filter(Boolean).join(" — ");
+        if (sub) out.push('<p class="r-sub">' + esc(sub) + "</p>");
+        out.push("<ul>" + bl.map((b) => {
+          const g = gradeBullet(b.text);
+          return '<li class="' + (g.cls === "bad" ? "over" : "") + '">' + mdHtml(b.text) + "</li>";
+        }).join("") + "</ul>");
+      });
+    }
+
+    const projects = (s.projects || []).filter((p, i) => chosen.has("j" + i) && plain(p.text));
+    if (projects.length) {
+      out.push("<h3>Selected Projects</h3><ul>" +
+        projects.map((p) => "<li>" + mdHtml(p.text) + "</li>").join("") + "</ul>");
+    }
+
+    const edu = (s.education || []).filter((e) => e.degree);
+    if (edu.length) {
+      out.push("<h3>Education</h3>");
+      edu.forEach((e) => out.push('<p class="r-head"><span>' + mdHtml(e.degree) +
+        "</span><span>" + esc(e.dates || "") + "</span></p>"));
+    }
+
+    $("#sheet").innerHTML = out.join("");
+    renderAudit();
+  }
+
+  function renderAudit() {
+    const a = [];
+    const items = allItems().filter((i) => chosen.has(i.key));
+    const over = items.filter((i) => gradeBullet(i.text).cls === "bad");
+    const emCount = (plain(state.summary).match(/—/g) || []).length +
+      items.reduce((n, i) => n + (plain(i.text).match(/—/g) || []).length, 0);
+
+    // Rough line estimate: 48 body lines fit a 0.5in-margin Letter page at 10.5pt.
+    let lines = 4;
+    if (plain(state.summary)) lines += 2 + Math.ceil(len(state.summary) / 118);
+    const sk = (state.skills || []).filter((g) => g.name || g.items).length;
+    if (sk) lines += 2 + sk;
+    const pos = (state.positions || []).filter((p, pi) => (p.bullets || []).some((b, bi) => chosen.has("p" + pi + "b" + bi)));
+    if (pos.length) lines += 2 + pos.length * 2;
+    items.forEach((i) => { lines += len(i.text) > BUDGET.bullet.l1[1] ? 2 : 1; });
+    const ed = (state.education || []).filter((e) => e.degree).length;
+    if (ed) lines += 2 + ed;
+    const est = Math.max(1, Math.ceil(lines / 48));
+
+    a.push({ cls: est <= state.pages ? "ok" : "bad",
+      t: "≈" + lines + " lines · about " + est + " page" + (est > 1 ? "s" : "") +
+         (est > state.pages ? " — over your target" : "") });
+    if (items.length) a.push({ cls: "ok", t: items.length + " bullets selected" });
+    if (over.length) a.push({ cls: "bad", t: over.length + " bullet(s) past the 2-line limit" });
+    if (emCount > 2) a.push({ cls: "warn", t: emCount + " em-dashes in prose — 2 or fewer reads more human" });
+    const sn = len(state.summary);
+    const [lo, hi] = BUDGET.summary[state.pages] || BUDGET.summary[1];
+    if (sn && (sn < lo || sn > hi)) a.push({ cls: "warn", t: "Summary " + sn + " chars · target " + lo + "–" + hi });
+
+    $("#audit").innerHTML = a.map((x) => '<span class="a ' + x.cls + '">' + esc(x.t) + "</span>").join("");
+  }
+
+  // ─────────────────────────── wiring ───────────────────────────
+
+  function setPath(path, val) {
+    const parts = path.split(".");
+    let o = state;
+    for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]];
+    o[parts[parts.length - 1]] = val;
+  }
+
+  document.addEventListener("input", (e) => {
+    const el = e.target;
+    if (el.dataset.path) { setPath(el.dataset.path, el.value); save(); render(); return; }
+
+    switch (el.id) {
+      case "f-name": state.profile.name = el.value; break;
+      case "f-cred": state.profile.credential = el.value; break;
+      case "f-contact":
+        state.profile.contact = el.value.split(",").map((s) => s.trim()).filter(Boolean); break;
+      case "f-links":
+        state.profile.links = el.value.split("\n").map((l) => {
+          const [label, url] = l.split("|").map((s) => (s || "").trim());
+          return url ? { label: label || url, url } : null;
+        }).filter(Boolean); break;
+      case "f-summary": state.summary = el.value; updateSummaryCount(); break;
+      default: return;
+    }
+    save(); render();
+  });
+
+  document.addEventListener("change", (e) => {
+    if (e.target.id === "f-pages") {
+      state.pages = Number(e.target.value); updateSummaryCount(); save(); render(); return;
+    }
+    if (e.target.matches("input[type=checkbox][data-key]")) {
+      const k = e.target.dataset.key;
+      e.target.checked ? chosen.add(k) : chosen.delete(k);
+      save(); render();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+
+    if (t.classList.contains("tab")) {
+      $$(".tab").forEach((x) => x.classList.remove("active"));
+      $$(".panel").forEach((x) => x.classList.remove("active"));
+      t.classList.add("active");
+      $("#" + t.dataset.panel).classList.add("active");
+      if (t.dataset.panel === "p-preview") render();
+      return;
+    }
+
+    const add = t.dataset.add;
+    if (add) {
+      if (add === "skill") state.skills.push({ name: "", items: "" });
+      else if (add === "position") state.positions.push({ theme: "", role: "", org: "", location: "", dates: "", bullets: [{ text: "" }] });
+      else if (add === "project") state.projects.push({ text: "" });
+      else if (add === "education") state.education.push({ degree: "", dates: "", details: [] });
+      else if (add.startsWith("bullet:")) state.positions[+add.split(":")[1]].bullets.push({ text: "" });
+      save(); renderLibrary(); render(); return;
+    }
+
+    const del = t.dataset.del;
+    if (del) {
+      const [kind, a, b] = del.split(":");
+      if (kind === "skill") state.skills.splice(+a, 1);
+      else if (kind === "position") state.positions.splice(+a, 1);
+      else if (kind === "project") state.projects.splice(+a, 1);
+      else if (kind === "education") state.education.splice(+a, 1);
+      else if (kind === "bullet") state.positions[+a].bullets.splice(+b, 1);
+      chosen.clear();                    // indices shifted; selection is no longer valid
+      save(); renderLibrary(); render(); return;
+    }
+
+    if (t.id === "btn-match") return runMatch();
+    if (t.id === "btn-print") return window.print();
+
+    if (t.id === "btn-docx") {
+      window.DocxGen.download(state, chosen).catch((err) => alert("Could not build the file: " + err.message));
+      return;
+    }
+
+    if (t.id === "btn-sample") {
+      fetch("data/sample.json").then((r) => r.json()).then((d) => {
+        state = Object.assign(blank(), d);
+        chosen = new Set(allItems().map((i) => i.key));
+        save(); renderLibrary(); render();
+        $(".tab").click();
+      }).catch(() => alert("Could not load the sample file."));
+      return;
+    }
+
+    if (t.id === "btn-import") return $("#file-import").click();
+
+    if (t.id === "btn-export-json") {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "tailor-data.json";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      return;
+    }
+  });
+
+  $("#file-import").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        state = Object.assign(blank(), JSON.parse(fr.result));
+        chosen = new Set(allItems().map((i) => i.key));
+        save(); renderLibrary(); render();
+      } catch (err) { alert("That file isn't valid JSON."); }
+    };
+    fr.readAsText(f);
+    e.target.value = "";
+  });
+
+  // ── boot ──
+  if (!load()) {
+    fetch("data/sample.json").then((r) => r.json()).then((d) => {
+      state = Object.assign(blank(), d);
+      chosen = new Set(allItems().map((i) => i.key));
+      renderLibrary(); render();
+    }).catch(() => { renderLibrary(); render(); });
+  } else {
+    renderLibrary(); render();
+  }
+})();

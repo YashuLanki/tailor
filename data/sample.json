@@ -1,0 +1,66 @@
+{
+  "_note": "Sample data for a fictional person. Replace it with your own — Load sample overwrites whatever is in the browser.",
+  "profile": {
+    "name": "Jordan Rivera",
+    "credential": "M.S.",
+    "contact": ["Denver, CO", "(555) 010-4477", "jordan.rivera@example.com"],
+    "links": [
+      { "label": "Portfolio", "url": "https://example.com" },
+      { "label": "GitHub", "url": "https://github.com" }
+    ]
+  },
+  "summary": "Analyst with an M.S. in Statistics who builds the tooling behind the analysis, not just the charts. I have replaced two manual reporting cycles with automated pipelines and found the pricing gap that changed how a distributor set regional rates.",
+  "skills": [
+    { "name": "Languages & Query", "items": "**Python**, **SQL**, R, VBA" },
+    { "name": "Analytics", "items": "**Tableau**, Excel (PivotTables, VLOOKUP), exploratory analysis, A/B testing" },
+    { "name": "Data Engineering", "items": "dbt, Airflow, ETL pipeline design, Postgres, data validation" },
+    { "name": "Modeling", "items": "**scikit-learn**, regression, time series forecasting, model evaluation" },
+    { "name": "Additional", "items": "technical writing, stakeholder communication, Git" }
+  ],
+  "positions": [
+    {
+      "theme": "Reporting Automation & Pricing Analysis",
+      "role": "Data Analyst",
+      "org": "Northwind Distribution",
+      "location": "Denver, CO",
+      "dates": "March 2024 – Present",
+      "bullets": [
+        { "text": "Automated the weekly regional sales report in Python and SQL, replacing a four-hour manual Excel rebuild with a pipeline that lands in Tableau before the Monday leadership call." },
+        { "text": "Analyzed margin by SKU across eleven regions and found private-label products were priced 14% below their contribution threshold, prompting a repricing that leadership adopted for the next quarter." },
+        { "text": "Built the validation layer for the pricing dataset, reconciling order records against the ERP nightly and flagging mismatches before they reached a report." },
+        { "text": "Partnered with warehouse operations to instrument pick-time data, then modeled the relationship between staffing and same-day fulfillment rates." }
+      ]
+    },
+    {
+      "theme": "Forecasting & Experiment Analysis",
+      "role": "Analytics Associate",
+      "org": "Cedarline Health",
+      "location": "Remote",
+      "dates": "June 2022 – February 2024",
+      "bullets": [
+        { "text": "Built a time series model forecasting monthly appointment volume by clinic, reducing scheduling overtime by shifting staffing plans two weeks earlier in the cycle." },
+        { "text": "Designed and analyzed an A/B test on appointment reminder wording across 40,000 patients, measuring a 6-point lift in confirmation rate." },
+        { "text": "Migrated fourteen legacy SQL reports into dbt models with tests, cutting the nightly refresh from 50 minutes to 9." }
+      ]
+    },
+    {
+      "theme": "Instruction & Technical Communication",
+      "role": "Graduate Teaching Assistant",
+      "org": "State University",
+      "location": "",
+      "dates": "August 2020 – May 2022",
+      "bullets": [
+        { "text": "Taught introductory statistics labs to sections of 60 students, translating quantitative reasoning for non-majors and holding weekly office hours." }
+      ]
+    }
+  ],
+  "projects": [
+    { "text": "**Transit Delay Explorer** (Python, Streamlit) — dashboard over three years of public transit data, surfacing which routes degrade most in winter weather." },
+    { "text": "**Grocery Price Index** (Python, Postgres) — scraped and normalized weekly prices across four retailers, publishing a monthly index with documented methodology." }
+  ],
+  "education": [
+    { "degree": "M.S., Statistics — State University", "dates": "August 2020 – May 2022", "details": [] },
+    { "degree": "B.A., Economics — Riverside College, cum laude", "dates": "August 2016 – May 2020", "details": [] }
+  ],
+  "pages": 1
+}
