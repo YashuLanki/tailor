@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tailor — JD-matched resumes, in your browser</title>
-<meta name="description" content="Build a reusable bullet library once, paste a job description, get a tailored one-page resume as a Word document. Runs entirely in your browser.">
+<title>Tailor — drop your documents, get a JD-matched resume</title>
+<meta name="description" content="Upload the resumes, letters and reports you already have. Paste a job posting. Get a tailored one-page resume as a Word document. Runs entirely in your browser.">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -14,92 +14,136 @@
     <span class="mark">◆</span>
     <div>
       <h1>Tailor</h1>
-      <p>JD-matched resumes. All local, no account.</p>
+      <p>Drop your documents. Paste a posting. Export a resume.</p>
     </div>
   </div>
   <div class="topactions">
-    <button id="btn-sample" class="ghost" type="button">Load sample</button>
-    <button id="btn-import" class="ghost" type="button">Import</button>
-    <button id="btn-export-json" class="ghost" type="button">Export data</button>
+    <button id="btn-sample" class="ghost" type="button">Try a sample</button>
+    <button id="btn-import" class="ghost" type="button">Restore backup</button>
+    <button id="btn-export-json" class="ghost" type="button">Back up</button>
+    <button id="btn-reset" class="ghost" type="button">Clear all</button>
     <input id="file-import" type="file" accept="application/json" hidden>
   </div>
 </header>
 
 <nav class="tabs" role="tablist">
-  <button class="tab active" data-panel="p-library" role="tab">1 · Library</button>
-  <button class="tab" data-panel="p-tailor" role="tab">2 · Tailor to a JD</button>
+  <button class="tab active" data-panel="p-upload" role="tab">1 · Your material</button>
+  <button class="tab" data-panel="p-tailor" role="tab">2 · Target job</button>
   <button class="tab" data-panel="p-preview" role="tab">3 · Preview &amp; export</button>
 </nav>
 
 <main>
 
-<!-- ───────────── LIBRARY ───────────── -->
-<section id="p-library" class="panel active">
-  <p class="lede">Enter your material once. Every future application reuses it, so tailoring becomes selection
-  rather than rewriting.</p>
+<!-- ───────────── 1 · UPLOAD ───────────── -->
+<section id="p-upload" class="panel active">
+  <p class="lede">Drop in whatever you already have — a resume, an old cover letter, a project report, a
+  transcript. Everything gets read and sorted into a library you can reuse for every future application.
+  Nothing is uploaded anywhere; the parsing happens in this tab.</p>
 
-  <details class="card" open>
-    <summary><h2>Profile</h2></summary>
-    <div class="grid2">
-      <label>Full name <input id="f-name" placeholder="Jordan Rivera"></label>
-      <label>Credential <span class="hint">shown after your name</span><input id="f-cred" placeholder="M.S."></label>
+  <div id="drop" class="drop" tabindex="0" role="button" aria-label="Choose files to add">
+    <input id="file-docs" type="file" multiple accept=".docx,.pdf,.txt,.md,.markdown,.tex,.csv" hidden>
+    <div class="drop-inner">
+      <span class="drop-icon">↑</span>
+      <p class="drop-main">Drop files here, or click to choose</p>
+      <p class="drop-sub">Word (.docx), PDF, plain text, Markdown, LaTeX · as many as you like</p>
     </div>
-    <label>Contact line <span class="hint">comma-separated — city, phone, email</span>
-      <input id="f-contact" placeholder="Phoenix, AZ, (555) 123-4567, you@example.com"></label>
-    <label>Links <span class="hint">one per line, as <code>Label | https://url</code></span>
-      <textarea id="f-links" rows="2" placeholder="Portfolio | https://example.com"></textarea></label>
+  </div>
+
+  <div id="ingest-log" class="stack" hidden></div>
+
+  <details class="card" id="links-card">
+    <summary><h2>Links to include in the header</h2></summary>
+    <div class="grid2">
+      <label>Portfolio or website <input id="l-portfolio" placeholder="https://yourname.github.io"></label>
+      <label>GitHub <input id="l-github" placeholder="https://github.com/username"></label>
+    </div>
+    <div class="grid2">
+      <label>LinkedIn <input id="l-linkedin" placeholder="https://linkedin.com/in/username"></label>
+      <label>Other <input id="l-other" placeholder="https://scholar.google.com/..."></label>
+    </div>
+    <p class="hint">These are printed as links on the resume. Nothing is fetched or scraped from them.</p>
   </details>
 
-  <details class="card" open>
-    <summary><h2>Summary</h2></summary>
-    <label>Opening paragraph <span class="hint" id="sum-count">0 chars</span>
-      <textarea id="f-summary" rows="4" placeholder="Lead with what you build and one concrete result."></textarea></label>
-    <p class="hint">Target 290–400 characters for a one-page resume, 480–560 for two pages.</p>
+  <details class="card" id="review-card">
+    <summary><h2>Review what we found</h2></summary>
+    <p class="hint" id="review-note">Parsing is heuristic, so skim this once. Fix anything wrong here and it stays
+    fixed for every application. Character counts warn you before a line overflows on the page.</p>
+
+    <details class="card" open>
+      <summary><h2>Profile</h2></summary>
+      <div class="grid2">
+        <label>Full name <input id="f-name" placeholder="Your name"></label>
+        <label>Credential <span class="hint">shown after your name</span><input id="f-cred" placeholder="M.S."></label>
+      </div>
+      <label>Contact line <span class="hint">comma-separated</span>
+        <input id="f-contact" placeholder="City, ST, (555) 123-4567, you@example.com"></label>
+    </details>
+
+    <details class="card" open>
+      <summary><h2>Summary</h2></summary>
+      <label>Opening paragraph <span class="hint" id="sum-count">0 chars</span>
+        <textarea id="f-summary" rows="4" placeholder="Lead with what you build and one concrete result."></textarea></label>
+    </details>
+
+    <details class="card">
+      <summary><h2>Skills</h2></summary>
+      <div id="skills-list" class="stack"></div>
+      <button class="add" data-add="skill" type="button">+ Add skill group</button>
+      <p class="hint">Wrap a term in <code>**asterisks**</code> to bold it.</p>
+    </details>
+
+    <details class="card" open>
+      <summary><h2>Experience</h2></summary>
+      <div id="positions-list" class="stack"></div>
+      <button class="add" data-add="position" type="button">+ Add position</button>
+    </details>
+
+    <details class="card">
+      <summary><h2>Projects</h2></summary>
+      <div id="projects-list" class="stack"></div>
+      <button class="add" data-add="project" type="button">+ Add project</button>
+    </details>
+
+    <details class="card">
+      <summary><h2>Education</h2></summary>
+      <div id="education-list" class="stack"></div>
+      <button class="add" data-add="education" type="button">+ Add degree</button>
+    </details>
   </details>
 
-  <details class="card" open>
-    <summary><h2>Skills</h2></summary>
-    <div id="skills-list" class="stack"></div>
-    <button class="add" data-add="skill" type="button">+ Add skill group</button>
-    <p class="hint">Wrap a term in <code>**asterisks**</code> to bold it. Keep each group under 115 characters.</p>
-  </details>
-
-  <details class="card" open>
-    <summary><h2>Experience</h2></summary>
-    <div id="positions-list" class="stack"></div>
-    <button class="add" data-add="position" type="button">+ Add position</button>
-  </details>
-
-  <details class="card">
-    <summary><h2>Projects</h2></summary>
-    <div id="projects-list" class="stack"></div>
-    <button class="add" data-add="project" type="button">+ Add project</button>
-  </details>
-
-  <details class="card">
-    <summary><h2>Education</h2></summary>
-    <div id="education-list" class="stack"></div>
-    <button class="add" data-add="education" type="button">+ Add degree</button>
-  </details>
+  <p class="row"><button class="primary" data-goto="p-tailor" type="button">Next: target a job →</button></p>
 </section>
 
-<!-- ───────────── TAILOR ───────────── -->
+<!-- ───────────── 2 · TARGET JOB ───────────── -->
 <section id="p-tailor" class="panel">
-  <p class="lede">Paste the job description. Every bullet gets scored against it, so you pick from evidence
-  instead of guessing.</p>
+  <p class="lede">Paste the posting. Every bullet in your library gets scored against it, so choosing what goes
+  on the page is a decision you make from evidence.</p>
 
   <div class="card">
-    <label>Job description
-      <textarea id="f-jd" rows="10" placeholder="Paste the full posting — requirements, responsibilities, everything."></textarea></label>
+    <label>Paste the posting's link
+      <div class="row nowrap">
+        <input id="f-jd-url" placeholder="https://job-boards.greenhouse.io/company/jobs/1234567">
+        <button id="btn-fetch" class="primary" type="button">Read &amp; score</button>
+      </div>
+    </label>
+    <p class="hint" id="fetch-note">Browsers can't read another site's page directly, so the link is fetched
+    through a public reader service — meaning that service sees the URL. If you'd rather nothing leave your
+    machine, or the read fails, paste the text instead.</p>
+  </div>
+
+  <details class="card" id="paste-card">
+    <summary><h2>Or paste the text</h2></summary>
+    <label>Job description <span class="hint">fully local — nothing is sent anywhere</span>
+      <textarea id="f-jd" rows="12" placeholder="Open the posting, select all, paste here."></textarea></label>
     <div class="row">
       <button id="btn-match" class="primary" type="button">Score my bullets</button>
       <span id="match-note" class="hint"></span>
     </div>
-  </div>
+  </details>
 
   <div class="card" id="kw-card" hidden>
     <h2>Terms found in the posting</h2>
-    <p class="hint">Ranked by how often they appear. Click one to see which of your bullets mention it.</p>
+    <p class="hint">Ranked by how often they appear.</p>
     <div id="kw-cloud" class="cloud"></div>
   </div>
 
@@ -111,13 +155,15 @@
 
   <div class="card" id="gap-card" hidden>
     <h2>Terms you don't cover</h2>
-    <p class="hint">Frequent in the posting, absent from every bullet. Treat these as gaps to name honestly —
-    not prompts to invent experience.</p>
+    <p class="hint">Frequent in the posting, absent from every one of your bullets. These are gaps to name
+    honestly in a cover letter — not prompts to invent experience.</p>
     <div id="gap-cloud" class="cloud"></div>
   </div>
+
+  <p class="row"><button class="primary" data-goto="p-preview" type="button">Next: preview →</button></p>
 </section>
 
-<!-- ───────────── PREVIEW ───────────── -->
+<!-- ───────────── 3 · PREVIEW ───────────── -->
 <section id="p-preview" class="panel">
   <div class="preview-actions">
     <div class="row">
@@ -137,11 +183,14 @@
 </main>
 
 <footer>
-  <p>Runs entirely in your browser. Your data stays in this browser's local storage and is never uploaded.
+  <p>Runs entirely in your browser — no server, no account, no upload. Your library is stored in this browser
+  only, so use <em>Back up</em> if you want a copy.
   <a href="https://github.com/YashuLanki/tailor">Source on GitHub</a></p>
 </footer>
 
+<script src="vendor/fflate.js"></script>
 <script src="vendor/docx.iife.js"></script>
+<script src="extract.js"></script>
 <script src="docxgen.js"></script>
 <script src="app.js"></script>
 </body>

@@ -259,13 +259,26 @@
       "</div></div>").join("");
   }
 
+  const LINK_FIELDS = {
+    "l-portfolio": "Portfolio", "l-github": "GitHub",
+    "l-linkedin": "LinkedIn", "l-other": "Link",
+  };
+
+  function renderLinks() {
+    Object.keys(LINK_FIELDS).forEach((id) => {
+      const hit = (state.profile.links || []).find((l) => l.label === LINK_FIELDS[id]);
+      const el = $("#" + id);
+      if (el) el.value = hit ? hit.url : "";
+    });
+  }
+
   function renderLibrary() {
     $("#f-name").value = state.profile.name || "";
     $("#f-cred").value = state.profile.credential || "";
     $("#f-contact").value = (state.profile.contact || []).join(", ");
-    $("#f-links").value = (state.profile.links || []).map((l) => l.label + " | " + l.url).join("\n");
     $("#f-summary").value = state.summary || "";
     $("#f-pages").value = String(state.pages || 1);
+    renderLinks();
     renderSkills(); renderPositions(); renderProjects(); renderEducation();
     updateSummaryCount();
   }
@@ -383,6 +396,127 @@
     $("#audit").innerHTML = a.map((x) => '<span class="a ' + x.cls + '">' + esc(x.t) + "</span>").join("");
   }
 
+  // ─────────────────────────── document ingest ───────────────────────────
+
+  function goto(panel) {
+    $$(".tab").forEach((x) => x.classList.toggle("active", x.dataset.panel === panel));
+    $$(".panel").forEach((x) => x.classList.toggle("active", x.id === panel));
+    if (panel === "p-preview") render();
+    window.scrollTo(0, 0);
+  }
+
+  function logIngest(notes, busy) {
+    const box = $("#ingest-log");
+    box.hidden = false;
+    const rows = notes.map((n) => {
+      if (!n.ok) {
+        return '<div class="item"><div class="item-head"><strong>' + esc(n.file) + "</strong>" +
+          '<span class="bullet-meta bad">could not read</span></div>' +
+          '<p class="hint">' + esc(n.error) + "</p></div>";
+      }
+      const c = n.counts;
+      const found = [
+        c.positions + " position" + (c.positions === 1 ? "" : "s"),
+        c.bullets + " bullet" + (c.bullets === 1 ? "" : "s"),
+        c.skills + " skill group" + (c.skills === 1 ? "" : "s"),
+        c.education + " degree" + (c.education === 1 ? "" : "s"),
+        c.projects + " project" + (c.projects === 1 ? "" : "s"),
+      ].join(" · ");
+      const empty = !c.positions && !c.bullets && !c.skills && !c.education && !c.projects;
+      return '<div class="item"><div class="item-head"><strong>' + esc(n.file) + "</strong>" +
+        '<span class="bullet-meta ' + (empty ? "warn" : "ok") + '">' + (empty ? "no structure found" : "read") +
+        "</span></div><p class=\"hint\">" + esc(found) +
+        (empty ? " — if this is prose rather than a resume, its text was kept as summary material." : "") +
+        "</p></div>";
+    });
+    if (busy) rows.push('<div class="item"><p class="hint">Reading…</p></div>');
+    box.innerHTML = rows.join("");
+  }
+
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    logIngest([], true);
+
+    const { lib, notes } = await window.Extract.ingest(files);
+    logIngest(notes, false);
+
+    if (lib) {
+      // Merge so multiple drops accumulate — but never merge into the demo profile,
+      // or a user who tried the sample first ends up with a mix of their data and Jordan's.
+      const hasContent = !state._sample &&
+        state.positions.some((p) => (p.bullets || []).some((b) => plain(b.text)));
+      const base = hasContent ? state : null;
+      const merged = base ? window.Extract.merge(base, lib) : Object.assign(blank(), lib);
+      delete merged.notes;
+      // Drop the empty scaffold rows the blank state starts with.
+      merged.skills = (merged.skills || []).filter((g) => g.name || g.items);
+      merged.positions = (merged.positions || []).filter((p) => p.role || p.org || (p.bullets || []).some((b) => plain(b.text)));
+      merged.education = (merged.education || []).filter((e) => e.degree);
+      if (!merged.skills.length) merged.skills = [{ name: "", items: "" }];
+      if (!merged.positions.length) merged.positions = [{ theme: "", role: "", org: "", location: "", dates: "", bullets: [{ text: "" }] }];
+      if (!merged.education.length) merged.education = [{ degree: "", dates: "", details: [] }];
+
+      delete merged._sample;
+      state = merged;
+      chosen = new Set(allItems().map((i) => i.key));   // everything on until a JD narrows it
+      save(); renderLibrary(); render();
+      $("#review-card").open = true;
+
+      const n = allItems().length;
+      $("#review-note").innerHTML = "<strong>" + n + " bullets and projects imported.</strong> " +
+        "Parsing is heuristic, so skim this once — fix anything wrong and it stays fixed for every application.";
+    }
+  }
+
+  /* Reading a posting from a URL.
+
+     A browser can't read another site's page unless that site sends permissive
+     CORS headers, and job boards don't. So: try direct first (works for a few),
+     then fall back to a public reader service that fetches server-side and
+     returns plain text. That service sees the URL — which is why pasting is
+     offered as the fully-local alternative. */
+  const READERS = [
+    { name: "r.jina.ai", url: (u) => "https://r.jina.ai/" + u },
+    { name: "corsproxy.io", url: (u) => "https://corsproxy.io/?" + encodeURIComponent(u) },
+  ];
+
+  function textFromHtml(body) {
+    if (!/<[a-z][\s\S]*>/i.test(body)) return body;           // already plain text
+    const doc = new DOMParser().parseFromString(body, "text/html");
+    doc.querySelectorAll("script,style,noscript,nav,header,footer,svg").forEach((n) => n.remove());
+    const main = doc.querySelector("main,[role=main],article") || doc.body;
+    return (main.innerText || main.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  async function tryFetchJd() {
+    let url = $("#f-jd-url").value.trim();
+    const note = $("#fetch-note");
+    if (!url) { note.textContent = "Paste the posting's URL first."; return; }
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+
+    const attempts = [{ name: "direct", url: (u) => u }].concat(READERS);
+    for (const a of attempts) {
+      note.textContent = "Reading the posting… (" + a.name + ")";
+      try {
+        const res = await fetch(a.url(url));
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const text = textFromHtml(await res.text());
+        if (text.length < 300) throw new Error("returned almost no text");
+        $("#f-jd").value = text;
+        note.innerHTML = "Read " + text.length.toLocaleString() + " characters via <strong>" + esc(a.name) +
+          "</strong>. Scoring now — check the text below if the results look off.";
+        runMatch();
+        return;
+      } catch (err) { /* try the next route */ }
+    }
+
+    note.innerHTML = "<strong>Couldn't read that posting.</strong> Job boards block automated reads, and some " +
+      "require a login. Open the posting, select all, and paste it into the box below — that always works.";
+    $("#paste-card").open = true;
+    $("#f-jd").focus();
+  }
+
   // ─────────────────────────── wiring ───────────────────────────
 
   function setPath(path, val) {
@@ -401,13 +535,16 @@
       case "f-cred": state.profile.credential = el.value; break;
       case "f-contact":
         state.profile.contact = el.value.split(",").map((s) => s.trim()).filter(Boolean); break;
-      case "f-links":
-        state.profile.links = el.value.split("\n").map((l) => {
-          const [label, url] = l.split("|").map((s) => (s || "").trim());
-          return url ? { label: label || url, url } : null;
-        }).filter(Boolean); break;
       case "f-summary": state.summary = el.value; updateSummaryCount(); break;
-      default: return;
+      default:
+        if (LINK_FIELDS[el.id]) {
+          const label = LINK_FIELDS[el.id];
+          const url = el.value.trim();
+          state.profile.links = (state.profile.links || []).filter((l) => l.label !== label);
+          if (url) state.profile.links.push({ label, url: /^https?:/i.test(url) ? url : "https://" + url });
+          break;
+        }
+        return;
     }
     save(); render();
   });
@@ -426,12 +563,20 @@
   document.addEventListener("click", (e) => {
     const t = e.target;
 
-    if (t.classList.contains("tab")) {
-      $$(".tab").forEach((x) => x.classList.remove("active"));
-      $$(".panel").forEach((x) => x.classList.remove("active"));
-      t.classList.add("active");
-      $("#" + t.dataset.panel).classList.add("active");
-      if (t.dataset.panel === "p-preview") render();
+    if (t.classList.contains("tab")) return goto(t.dataset.panel);
+    if (t.dataset.goto) return goto(t.dataset.goto);
+    if (t.id === "btn-fetch") return tryFetchJd();
+
+    if (t.closest("#drop") && !t.closest("input")) { $("#file-docs").click(); return; }
+
+    if (t.id === "btn-reset") {
+      if (!confirm("Clear your whole library from this browser? Back it up first if you want a copy.")) return;
+      localStorage.removeItem(KEY);
+      state = blank(); chosen = new Set();
+      $("#ingest-log").hidden = true; $("#ingest-log").innerHTML = "";
+      $("#f-jd").value = ""; $("#f-jd-url").value = "";
+      ["kw-card", "match-card", "gap-card"].forEach((i) => { $("#" + i).hidden = true; });
+      renderLibrary(); render(); goto("p-upload");
       return;
     }
 
@@ -468,9 +613,13 @@
     if (t.id === "btn-sample") {
       fetch("data/sample.json").then((r) => r.json()).then((d) => {
         state = Object.assign(blank(), d);
+        state._sample = true;         // dropping real files replaces this rather than merging
         chosen = new Set(allItems().map((i) => i.key));
         save(); renderLibrary(); render();
-        $(".tab").click();
+        $("#review-card").open = true;
+        $("#review-note").innerHTML = "<strong>Sample profile loaded</strong> — a fictional analyst, so you can " +
+          "see the whole flow. Drop your own documents above and this is replaced.";
+        goto("p-upload");
       }).catch(() => alert("Could not load the sample file."));
       return;
     }
@@ -486,6 +635,21 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
       return;
     }
+  });
+
+  // ── file drop + picker ──
+  $("#file-docs").addEventListener("change", (e) => { handleFiles(e.target.files); e.target.value = ""; });
+
+  const drop = $("#drop");
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
+    e.preventDefault(); drop.classList.add("over");
+  }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => {
+    e.preventDefault(); drop.classList.remove("over");
+  }));
+  drop.addEventListener("drop", (e) => { if (e.dataTransfer) handleFiles(e.dataTransfer.files); });
+  drop.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#file-docs").click(); }
   });
 
   $("#file-import").addEventListener("change", (e) => {
@@ -504,13 +668,8 @@
   });
 
   // ── boot ──
-  if (!load()) {
-    fetch("data/sample.json").then((r) => r.json()).then((d) => {
-      state = Object.assign(blank(), d);
-      chosen = new Set(allItems().map((i) => i.key));
-      renderLibrary(); render();
-    }).catch(() => { renderLibrary(); render(); });
-  } else {
-    renderLibrary(); render();
-  }
+  // First visit starts empty: the point is to drop your own documents in.
+  load();
+  renderLibrary();
+  render();
 })();
