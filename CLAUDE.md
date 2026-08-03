@@ -95,12 +95,28 @@ a filler participle (`enabling`, `contributing`, `driving`, …) followed by an 
 `efficiency`, `better X`) with no number is flagged. Verify both directions when touching it: good bullets must
 stay clean, vague ones must still be caught.
 
-## The summary is never generated
+## Drafting: the one exception to "never writes prose" (`letter.js`)
 
-If no uploaded document has a Summary section, the resume omits it and the Library says so plainly. The app does
-not compose one, and does not seed one from a cover letter either — letter prose addresses a specific employer in
-a different register, and every heuristic to salvage it made things worse. Saying "there isn't one, write one if
-you want it" is the honest behaviour.
+Two drafts are generated — a summary and a cover letter — because a resume with no summary and an application
+with no letter are real gaps. The exception is bounded, and the bounds are the whole point:
+
+- **Every factual clause is lifted verbatim** from a bullet the user wrote. `toClause()` only lowercases the
+  leading verb so it reads mid-sentence.
+- **Connective tissue is fixed template text.** No number, employer or claim is ever synthesised.
+- **Both outputs are labelled drafts** in the UI, with copy saying to rewrite before sending. `state.summaryIsDraft`
+  persists that notice across re-renders and clears the moment the user edits by hand.
+- **The cover letter's opening cannot be automated well** — a good hook names something specific about the
+  employer, which the app cannot know. The template leads with the applicant's strongest concrete fact and the
+  note says so outright.
+- **The gap paragraph is deliberate.** Where scoring found JD terms no bullet covers, the letter names them and
+  leaves a bracketed prompt. Naming a gap is more credible than implying coverage.
+
+If you extend this, keep the invariant: assemble and re-order the user's sentences, never author a new claim.
+Prose the user cannot defend in an interview is worse than no prose.
+
+The summary is still never *invented*. With no bullets selected there is no draft, and nothing is seeded from a
+cover letter — letter paragraphs address one employer in a different register, and the filters needed to salvage
+them rejected valid self-description while admitting "I am writing to express my interest".
 
 ## Formatting markers
 

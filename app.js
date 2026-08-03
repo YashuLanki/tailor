@@ -51,6 +51,9 @@
   let state = blank();
   let chosen = new Set();      // keys of bullets/projects included in the resume
   let keywords = [];           // [{term, count}] from the JD
+  let lastScores = null;       // {bulletKey: score} from the most recent scoring
+  let lastGaps = [];           // JD terms no bullet covered
+  let letterSpec = null;       // most recent cover-letter draft
 
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify({ state, chosen: [...chosen] })); } catch (e) { /* quota */ }
@@ -202,6 +205,8 @@
     const max = scored[0].score || 1;
 
     autoSelectToFit(scored);
+    lastScores = {};
+    scored.forEach((x) => { lastScores[x.key] = x.score; });
 
     $("#match-note").textContent = "";
 
@@ -328,6 +333,10 @@
         note.className = "hint warn-text";
         note.textContent = "None of your documents had a summary, so the resume omits that section. " +
           "Write one here if you want it — the app will not invent one for you.";
+      } else if (state.summaryIsDraft) {
+        note.className = "hint warn-text";
+        note.textContent = "Assembled from your own bullets — rewrite it in your voice before sending. " +
+          "It reads like a list because it is one.";
       } else {
         note.className = "hint";
         note.textContent = n < lo || n > hi ? "Target " + lo + "–" + hi + " characters for this page count." : "";
@@ -463,6 +472,30 @@
       '<span class="flag-tag">' + label[f.severity] + "</span>" +
       '<div><div class="flag-what">' + esc(f.what) + '  <span class="flag-where">' + esc(f.where) + "</span></div>" +
       '<div class="flag-fix">' + esc(f.fix) + "</div></div></div>").join("");
+  }
+
+  function draftLetter() {
+    const note = $("#letter-note");
+    const res = window.Letter.draftLetter(state, chosen, lastScores, {
+      company: $("#l-company").value,
+      roleTitle: $("#l-role").value,
+      recipient: $("#l-recipient").value,
+      gaps: lastGaps,
+    });
+    if (!res) { note.textContent = "Select some bullets first — score a posting on step 2."; return; }
+    if (res.needs) {
+      note.className = "hint warn-text";
+      note.textContent = "Enter the company and the role title first.";
+      return;
+    }
+    letterSpec = res;
+    $("#f-letter").hidden = false;
+    $("#f-letter").value = res.body.join("\n\n");
+    $("#btn-letter-docx").hidden = false;
+    $("#letter-badge").textContent = "draft";
+    $("#letter-badge").className = "badge warn";
+    note.className = "hint warn-text";
+    note.textContent = res.note;
   }
 
   function renderAudit() {
@@ -613,7 +646,7 @@
       case "f-cred": state.profile.credential = el.value; break;
       case "f-contact":
         state.profile.contact = el.value.split(",").map((s) => s.trim()).filter(Boolean); break;
-      case "f-summary": state.summary = el.value; updateSummaryCount(); break;
+      case "f-summary": state.summary = el.value; delete state.summaryIsDraft; updateSummaryCount(); break;
       default:
         if (LINK_FIELDS[el.id]) {
           const label = LINK_FIELDS[el.id];
@@ -678,6 +711,28 @@
       else if (kind === "bullet") state.positions[+a].bullets.splice(+b, 1);
       chosen.clear();                    // indices shifted; selection is no longer valid
       save(); renderLibrary(); render(); return;
+    }
+
+    if (t.id === "btn-draft-summary") {
+      const d = window.Letter.draftSummary(state, chosen, lastScores);
+      if (!d.text) { $("#sum-note").textContent = d.note; return; }
+      state.summary = d.text;
+      state.summaryIsDraft = true;
+      $("#f-summary").value = d.text;
+      save(); render();
+      return;
+    }
+
+    if (t.id === "btn-draft-letter") return draftLetter();
+
+    if (t.id === "btn-letter-docx") {
+      if (!letterSpec) return;
+      // Re-read the textarea so edits made in the box are what gets exported.
+      const edited = $("#f-letter").value.split(/\n\n+/).map((x) => x.trim()).filter(Boolean);
+      const spec = Object.assign({}, letterSpec, { body: edited.length ? edited : letterSpec.body });
+      window.DocxGen.download(state, chosen, spec)
+        .catch((err) => alert("Could not build the letter: " + err.message));
+      return;
     }
 
     if (t.id === "btn-match") return runMatch();

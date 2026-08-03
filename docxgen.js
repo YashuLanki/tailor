@@ -116,6 +116,70 @@ const GREY = "5A5A5A";   // dates, per the reference layout
     return p;
   }
 
+  /* Cover letter, following the reference layout in the CLI kit's
+     example_cover_letter.pdf: sender block right-aligned, date right, "To" with an
+     italic recipient block left, justified body, signature block. */
+  function buildLetter(spec) {
+    const kids = [];
+    const right = (text, opts) => new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: (opts && opts.after) || 0 },
+      children: inline(text, Object.assign({}, runOpts, opts || {})),
+    });
+
+    (spec.sender || []).forEach((line, i) => {
+      kids.push(right(line, i === 0
+        ? { bold: true, after: 0 }
+        : { italics: true, after: i === spec.sender.length - 1 ? 260 : 0 }));
+    });
+
+    if (spec.date) kids.push(right(spec.date, { after: 200 }));
+
+    kids.push(new Paragraph({
+      spacing: { after: 0 },
+      children: [new TextRun({ text: "To", bold: true, size: SIZE.body, font: FONT })],
+    }));
+    (spec.recipient || []).forEach((line, i) => {
+      kids.push(new Paragraph({
+        spacing: { after: i === spec.recipient.length - 1 ? 300 : 0 },
+        children: inline(line, Object.assign({}, runOpts, { italics: true })),
+      }));
+    });
+
+    if (spec.salutation) {
+      kids.push(new Paragraph({ spacing: { after: 240 }, children: inline(spec.salutation, runOpts) }));
+    }
+
+    (spec.body || []).forEach((para) => {
+      kids.push(new Paragraph({
+        alignment: AlignmentType.JUSTIFIED,
+        spacing: { after: 200, line: 260 },
+        children: inline(para, runOpts),
+      }));
+    });
+
+    if (spec.closing) kids.push(new Paragraph({ spacing: { before: 200, after: 0 }, children: inline(spec.closing, runOpts) }));
+    if (spec.signature) kids.push(new Paragraph({ spacing: { after: 0 }, children: inline(spec.signature, runOpts) }));
+    (spec.signatureExtra || []).forEach((l) => {
+      kids.push(new Paragraph({ spacing: { after: 0 }, children: inline(l, runOpts) }));
+    });
+
+    return new Document({
+      creator: spec.signature || "Tailor",
+      title: (spec.signature || "Cover Letter") + " — Cover Letter",
+      styles: { default: { document: { run: { font: FONT, size: SIZE.body } } } },
+      sections: [{
+        properties: {
+          page: {
+            size: { width: PAGE.width, height: PAGE.height },
+            margin: { top: 1080, right: 1080, bottom: 1080, left: 1080 },   // 0.75in, letter convention
+          },
+        },
+        children: kids,
+      }],
+    });
+  }
+
   /** Build a Document from app state plus the set of chosen bullet keys. */
   function build(state, chosen) {
     const kids = header(state);
@@ -212,18 +276,20 @@ const GREY = "5A5A5A";   // dates, per the reference layout
     });
   }
 
-  /** Build and trigger a download. */
-  async function download(state, chosen) {
-    const blob = await Packer.toBlob(build(state, chosen));
-    const safe = (state.profile.name || "Resume").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  /** Build and trigger a download. Pass a letter spec to download that instead. */
+  async function download(state, chosen, letterSpec) {
+    const doc = letterSpec ? buildLetter(letterSpec) : build(state, chosen);
+    const blob = await Packer.toBlob(doc);
+    const safe = ((letterSpec && letterSpec.signature) || state.profile.name || "Resume")
+      .replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = safe + "_Resume.docx";
+    a.download = safe + (letterSpec ? "_Cover_Letter.docx" : "_Resume.docx");
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
 
-  global.DocxGen = { build, download, inline };
+  global.DocxGen = { build, buildLetter, download, inline };
 })(window);
