@@ -6,7 +6,7 @@ Word document.
 Runs entirely in the browser — no server, no account, no upload. Your data lives in that browser's local storage
 and nowhere else.
 
-**[Live demo](#)** · replace this link once you enable GitHub Pages.
+**[Live demo →](https://yashulanki.github.io/tailor/)**
 
 ---
 
