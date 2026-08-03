@@ -311,7 +311,7 @@
         const h = parseHeader(p.text);
         if (h.role) {
           const degree = [h.role, h.org].filter(Boolean).join(" — ");
-          lib.education.push({ degree, dates: h.dates, details: [] });
+          if (looksLikeDegree(degree)) lib.education.push({ degree, dates: h.dates, details: [] });
         }
         continue;
       }
@@ -404,6 +404,41 @@
       .split(/\s+/).filter((w) => w.length > 2).slice(0, 8).join(" ");
   }
 
+  const DEGREE_WORD = /\b(m\.?s|m\.?a|m\.?b\.?a|b\.?s|b\.?a|ph\.?d|ed\.?d|j\.?d|m\.?eng|m\.?ed|master|bachelor|doctor|doctorate|associate|associate's|diploma|certificate)\b\.?/i;
+  const SCHOOL_WORD = /\b(university|college|institute|school|academy|polytechnic|seminary)\b/i;
+
+  /** A real degree line names a credential or an institution. Wrapped coursework
+      fragments like "Multivariable Calculus" name neither. */
+  function looksLikeDegree(text) {
+    const t = String(text || "").trim();
+    if (t.length < 8) return false;
+    if (!DEGREE_WORD.test(t) && !SCHOOL_WORD.test(t)) return false;
+    // "Coursework: ..." lines mention neither a credential nor a school, but guard anyway.
+    if (/^(relevant\s+)?(coursework|courses|classes|curriculum)\b/i.test(t)) return false;
+    return true;
+  }
+
+  /** Significant words, for comparing two spellings of the same thing. */
+  function sigWords(text) {
+    const DROP = new Set(["of", "the", "and", "in", "at", "for", "master", "bachelor",
+      "science", "arts", "doctor", "doctorate", "degree"]);
+    return new Set(String(text || "").toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !DROP.has(w)));
+  }
+
+  /** True when two degree strings describe the same credential.
+      "M.S., Artificial Intelligence — Grand Canyon University" matches
+      "Master of Science, Artificial Intelligence, Grand Canyon University — Phoenix, AZ". */
+  function sameDegree(a, b) {
+    const A = sigWords(a), B = sigWords(b);
+    if (!A.size || !B.size) return false;
+    let shared = 0;
+    A.forEach((w) => { if (B.has(w)) shared++; });
+    return shared / Math.min(A.size, B.size) >= 0.7;
+  }
+
   function linkLabel(url) {
     let host = "";
     try { host = new URL(url).hostname.toLowerCase(); } catch (e) { return null; }
@@ -466,8 +501,12 @@
       o.projects.push(pr);
     });
     add.education.forEach((e) => {
-      const k = bulletKey(e.degree);
-      if (!o.education.some((x) => bulletKey(x.degree) === k)) o.education.push(e);
+      if (!looksLikeDegree(e.degree)) return;
+      const hit = o.education.find((x) => sameDegree(x.degree, e.degree));
+      if (!hit) { o.education.push(e); return; }
+      // Same degree, two spellings. Keep the shorter, cleaner line and the better date.
+      if (e.degree.length < hit.degree.length) hit.degree = e.degree;
+      if (!hit.dates && e.dates) hit.dates = e.dates;
     });
     if (add._letter && !o._letter) o._letter = add._letter;
     return o;
