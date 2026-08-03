@@ -420,8 +420,7 @@
       skills.forEach((g) => {
         if (g.name) out.push('<p class="r-skillgroup">' + esc(g.name) + "</p>");
         String(g.items || "").split(";").map((x) => x.trim()).filter(Boolean).forEach((line) => {
-          const over = len(line) > BUDGET.skillLine;
-          out.push('<p class="r-skill' + (over ? " over" : "") + '">&ndash; ' + mdHtml(line) + "</p>");
+          out.push('<p class="r-skill">&ndash; ' + mdHtml(line) + "</p>");
         });
       });
     }
@@ -437,10 +436,10 @@
           '</span><span class="r-dates">' + esc(p.dates || "") + "</span></p>");
         const sub = [p.theme ? p.role : "", p.org, p.location].filter(Boolean).join(" — ");
         if (sub) out.push('<p class="r-sub">' + esc(sub) + "</p>");
-        out.push("<ul>" + bl.map((b) => {
-          const g = gradeBullet(b.text);
-          return '<li class="' + (g.cls === "bad" ? "over" : "") + '">' + mdHtml(b.text) + "</li>";
-        }).join("") + "</ul>");
+        /* No length highlighting on the sheet. It represents the finished document,
+           and a red block reads as a defect in the resume rather than a note to the
+           author. Per-bullet budgets live in the Library, where they are actionable. */
+        out.push("<ul>" + bl.map((b) => "<li>" + mdHtml(b.text) + "</li>").join("") + "</ul>");
       });
     }
 

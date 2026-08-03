@@ -250,7 +250,6 @@ textarea { resize: vertical; line-height: 1.5; }
 .sheet ul { margin: 0; padding-left: 14pt; list-style: none; }
 .sheet li { margin-bottom: 1.5pt; padding-left: 8pt; text-indent: -8pt; }
 .sheet li::before { content: "·  "; }
-.sheet .over { background: #fdecec; outline: 1px solid #f3b6b8; }
 
 footer {
   max-width: 1080px; margin: 0 auto; padding: 26px 22px 40px;
@@ -274,9 +273,6 @@ footer a { color: var(--accent); }
 
 @media print {
   .topbar, .tabs, .preview-actions, footer, .panel:not(#p-preview) { display: none !important; }
-  /* Never print the editing aids. The over-length highlight is guidance while
-     writing; on the finished document it reads as an error the reader can see. */
-  .sheet .over { background: none !important; outline: none !important; }
   .sheet a { color: #000 !important; text-decoration: underline; }
   body { background: #fff; }
   main { padding: 0; max-width: none; }

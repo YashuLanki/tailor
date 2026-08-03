@@ -148,6 +148,20 @@
   // "Austin, TX" / "Remote" / "Providence, RI 02903" — a place, not an employer.
   const LOCATION_ONLY = /^(remote|hybrid|onsite|[A-Z][A-Za-z .'-]+,\s*[A-Z]{2}(\s+\d{5})?)$/i;
 
+  /* Federal and government resumes carry administrative lines between the position
+     header and its bullets: a street address, hours per week, a supervisor and
+     whether they may be contacted, salary, grade. These are neither a position nor
+     an achievement. Left unhandled they become phantom employers named
+     "40 hours/week" that then swallow every following bullet. */
+  const ADMIN_LINE = new RegExp([
+    "\\b\\d+(\\.\\d+)?\\s*(hours?|hrs?)\\s*(per\\s*week|/\\s*week|a\\s*week)",
+    "^\\s*supervisor\\s*:",
+    "\\b(may|do\\s+not|okay\\s+to)\\s+contact\\b",
+    "^\\s*(salary|pay\\s*grade|grade|series|gs-\\d+|step)\\s*[:.]",
+    "^\\s*\\d+\\s+[NSEW]?\\.?\\s*[A-Z][\\w.'-]*(\\s+[\\w.'-]+)*\\s*,?\\s*(suite|ste|apt|unit|#)?",
+    "\\b(street|st\\.|avenue|ave\\.|road|rd\\.|boulevard|blvd\\.|parkway|pkwy|drive|dr\\.|lane|ln\\.|court|ct\\.)\\s*,?\\s*(suite|ste|apt|unit|#|[A-Za-z ]+,\\s*[A-Z]{2})",
+  ].join("|"), "i");
+
   const EMAIL = /[\w.+-]+@[\w-]+\.[\w.]{2,}/;
   const PHONE = /(?:\+?\d{1,2}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
   // NB: named URL_RE, not URL — a module-level `const URL` would shadow the
@@ -192,31 +206,46 @@
     }
     s = s.replace(/[|,;–—-]+\s*$/, "").trim();
 
-    // Split on strong separators only. Commas are handled after, and cautiously —
-    // headings like "Portfolio Monitoring, Risk Screening & AI Tooling" must survive intact.
-    let parts = s.split(/\s*[|—–]\s*|\s{2,}|\s+at\s+/).map((x) => x.trim()).filter(Boolean);
-    if (parts.length === 1 && (s.match(/,/g) || []).length === 1) {
-      const [left, right] = s.split(",").map((x) => x.trim());
-      // "Data Analyst, Acme Corp" splits. "Portfolio Monitoring, Risk Screening & AI Tooling"
-      // must not — an "&" or "and" on the right means the comma joins a phrase, not an employer.
-      const orgish = /\b(inc|llc|ltd|corp|corporation|company|co|group|university|college|school|bank|labs?|institute|foundation|systems|technologies|partners)\b\.?$/i.test(right);
-      const listish = /\s(&|and)\s/.test(right);
-      if (left && right && !listish && (orgish || (left.split(/\s+/).length <= 4 && right.split(/\s+/).length <= 3))) {
-        parts = [left, right];
+    // Split on strong separators first: pipe, em/en dash, spaced hyphen, double space, " at ".
+    let parts = s.split(/\s*[|—–]\s*|\s+-\s+|\s{2,}|\s+at\s+/).map((x) => x.trim()).filter(Boolean);
+
+    // A trailing location belongs in `location`, whichever separator preceded it.
+    const peelLocation = (arr) => {
+      if (arr.length >= 2 && LOCATION_ONLY.test(arr[arr.length - 1])) out.location = arr.pop();
+      return arr;
+    };
+    parts = peelLocation(parts);
+
+    // Whatever is left may still be "Role, Employer" on one line.
+    if (parts.length === 1) {
+      let segs = parts[0].split(",").map((x) => x.trim()).filter(Boolean);
+
+      // "…, Scottsdale, AZ" arrives as two segments.
+      if (!out.location && segs.length >= 3 && /^[A-Z]{2}$/.test(segs[segs.length - 1])) {
+        const st = segs.pop();
+        out.location = segs.pop() + ", " + st;
+      }
+      segs = peelLocation(segs);
+
+      if (segs.length >= 2) {
+        // A heading like "Portfolio Monitoring, Risk Screening & AI Tooling" must survive
+        // intact; an "&" or "and" on the right means the comma joins a phrase.
+        const rest = segs.slice(1).join(", ");
+        const orgish = /\b(inc|llc|ltd|corp|corporation|company|co|group|university|college|school|bank|labs?|institute|foundation|systems|technologies|partners|investments|agreement|associates|solutions)\b\.?/i.test(rest);
+        const listish = /\s(&|and)\s/.test(rest);
+        parts = (!listish && (orgish || segs.length > 2 ||
+                 (segs[0].split(/\s+/).length <= 5 && rest.split(/\s+/).length <= 4)))
+          ? [segs[0], rest]
+          : [segs.join(", ")];
+      } else {
+        parts = segs;
       }
     }
+
     if (parts.length === 1) out.role = parts[0];
     else if (parts.length >= 2) {
       out.role = parts[0];
-      out.org = parts[1];
-      // Trailing "City, ST" is a location, not part of the org.
-      const last = parts[parts.length - 1];
-      if (parts.length > 2 && /^[A-Za-z .'-]+,?\s*[A-Z]{2}$|remote/i.test(last)) {
-        out.location = last;
-        if (parts.length > 3) out.org = parts.slice(1, -1).join(", ");
-      } else if (parts.length > 2) {
-        out.org = parts.slice(1).join(", ");
-      }
+      out.org = parts.slice(1).join(", ");
     }
     return out;
   }
@@ -350,6 +379,9 @@
           pending.bullets.push({ text: stripMarker(p.text) });
           continue;
         }
+        // Administrative lines are neither a header nor an achievement — drop them.
+        if (ADMIN_LINE.test(p.text)) continue;
+
         // Not a bullet: either a new position header, or a subtitle for the current one.
         const h = parseHeader(p.text);
         const looksHeader = !!h.dates || isHeading(p.text) || DATE_RANGE.test(p.text);

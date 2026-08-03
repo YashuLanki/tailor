@@ -25,7 +25,10 @@ BASELINE = ROOT / "fixtures" / "baseline.json"
 
 
 def norm(s: str) -> str:
-    return "".join(c for c in str(s or "").lower() if c.isalnum() or c == " ").strip()
+    # Collapse whitespace too: stripping an em-dash out of "Science — Statistics"
+    # leaves a double space, which must still compare equal to a single one.
+    cleaned = "".join(c if c.isalnum() else " " for c in str(s or "").lower())
+    return " ".join(cleaned.split())
 
 
 def contains(hay: str, needle: str) -> bool:
