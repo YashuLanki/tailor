@@ -1,0 +1,9 @@
+{
+  "overall": 88.4,
+  "cases": {
+    "01_chronological": 100.0,
+    "02_federal": 84.6,
+    "03_academic_cv": 100.0,
+    "04_compact": 66.7
+  }
+}

@@ -88,7 +88,25 @@ format — verify against several real documents before and after any parser cha
 
 ## Verifying a change
 
-There is no test suite. Check in the browser console:
+There is a verification harness under `tools/` driven by SOPs in `workflows/`. Read
+`workflows/verify_parser.md` before touching `extract.js` and `workflows/verify_export.md` before touching
+`docxgen.js` or the budget constants.
+
+```bash
+# parser: build fixtures, parse them, score against ground truth
+python3 tools/make_fixtures.py && node tools/parse_corpus.mjs && python3 tools/score_parse.py
+python3 tools/score_parse.py --check            # exits 1 on regression against fixtures/baseline.json
+
+# export: build a .docx with the real writer, then validate it
+node tools/build_docx_headless.mjs --sample --out .tmp/out.docx
+python3 tools/validate_docx.py --file .tmp/out.docx --expect-pages 1 --expect-font "Times New Roman"
+```
+
+Current parser baseline is **88.4%** across four layout styles. `01_chronological` and `03_academic_cv` are at
+100%; `02_federal` and `04_compact` have known open failures documented in the workflow. Never edit an
+`expected.json` to make a check pass — ground truth changes only when the fixture's content does.
+
+You can also poke at it in the browser console:
 
 ```js
 // parse real documents without going through the drop UI

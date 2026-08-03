@@ -24,10 +24,16 @@
     const rels = {};
     if (files["word/_rels/document.xml.rels"]) {
       const relXml = new TextDecoder().decode(files["word/_rels/document.xml.rels"]);
-      const rRe = /<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"[^>]*>/g;
+      // Attribute order is not guaranteed — Word writes Id/Type/Target, LibreOffice
+      // does not. Pull each attribute out of the element independently.
+      const rRe = /<Relationship\b([^>]*)>/g;
       let r;
       while ((r = rRe.exec(relXml)) !== null) {
-        if (/hyperlink/i.test(rRe.lastIndex ? relXml.slice(r.index, rRe.lastIndex) : "")) rels[r[1]] = r[2];
+        const attrs = r[1];
+        const id = (attrs.match(/\bId="([^"]+)"/) || [])[1];
+        const type = (attrs.match(/\bType="([^"]+)"/) || [])[1] || "";
+        const target = (attrs.match(/\bTarget="([^"]+)"/) || [])[1];
+        if (id && target && /hyperlink/i.test(type)) rels[id] = target;
       }
     }
     const linkUrls = Object.values(rels).filter((u) => /^https?:/i.test(u));
@@ -139,9 +145,14 @@
     "((?:" + MONTH + "\\.?\\s*)?(?:19|20)\\d{2}|\\d{1,2}/(?:19|20)\\d{2}|present|current|now|ongoing)", "i");
   const SINGLE_DATE = new RegExp("^(?:" + MONTH + "\\.?\\s*)?(?:19|20)\\d{2}$", "i");
 
+  // "Austin, TX" / "Remote" / "Providence, RI 02903" — a place, not an employer.
+  const LOCATION_ONLY = /^(remote|hybrid|onsite|[A-Z][A-Za-z .'-]+,\s*[A-Z]{2}(\s+\d{5})?)$/i;
+
   const EMAIL = /[\w.+-]+@[\w-]+\.[\w.]{2,}/;
   const PHONE = /(?:\+?\d{1,2}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
-  const URL = /\b(?:https?:\/\/|www\.)[^\s|,)]+|\b[\w-]+\.(?:com|org|net|io|dev|me|ai|co)\/[^\s|,)]+/i;
+  // NB: named URL_RE, not URL — a module-level `const URL` would shadow the
+  // URL constructor and silently break linkLabel().
+  const URL_RE = /\b(?:https?:\/\/|www\.)[^\s|,)]+|\b[\w-]+\.(?:com|org|net|io|dev|me|ai|co)\/[^\s|,)]+/i;
 
   const isHeading = (t) => {
     const s = t.replace(/[^A-Za-z ]/g, "").trim();
@@ -241,7 +252,7 @@
       // URLs found in text, plus any hyperlink targets Word stored separately.
       const found = [];
       let um;
-      const ure = new RegExp(URL.source, "gi");
+      const ure = new RegExp(URL_RE.source, "gi");
       while ((um = ure.exec(t)) !== null) found.push(um[0]);
       (p.urls || []).forEach((u) => found.push(u));
       found.forEach((raw) => {
@@ -261,7 +272,7 @@
     // Name: the first line that looks like a person, not contact details.
     for (const p of head) {
       const t = p.text.replace(/\s{2,}/g, " ").trim();
-      if (!t || EMAIL.test(t) || PHONE.test(t) || URL.test(t)) continue;
+      if (!t || EMAIL.test(t) || PHONE.test(t) || URL_RE.test(t)) continue;
       if (t.split(/\s+/).length > 6) continue;
       const cm = t.match(/^(.+?),\s*(Ph\.?D\.?|M\.?S\.?|M\.?A\.?|M\.?B\.?A\.?|B\.?S\.?|M\.?Eng\.?)$/i);
       if (cm) { lib.profile.name = cm[1].trim(); lib.profile.credential = cm[2].trim(); }
@@ -341,7 +352,12 @@
           // and let the subtitle supply the real role, org and location.
           const h2 = parseHeader(p.text);
           const sepCount = (p.text.match(/\s[—–|]\s/g) || []).length;
-          if (sepCount >= 1 || h2.org) {
+          // Only promote the header line to a display theme when the subtitle actually
+          // supplies an employer. Otherwise a bare location line like "Austin, TX"
+          // overwrites the employer the header already gave us.
+          if (!pending.location && LOCATION_ONLY.test(p.text)) {
+            pending.location = p.text;                        // "Austin, TX" / "Remote"
+          } else if (h2.org && (sepCount >= 1 || h2.role)) {
             if (!pending.theme) pending.theme = [pending.role, pending.org].filter(Boolean).join(", ");
             pending.role = h2.role || "";
             pending.org = h2.org || "";

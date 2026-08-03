@@ -1,0 +1,16 @@
+{
+  "_note": "Academic CV: education precedes experience, and there is a Publications section that should not be lost.",
+  "name": "ALEX MORGAN",
+  "credential": "Ph.D.",
+  "contactMustInclude": ["alex.morgan@example.edu"],
+  "links": [
+    { "label": "GitHub", "url": "https://github.com/alexmorgan" },
+    { "label": "Scholar", "url": "https://scholar.google.com/citations?user=XXXX" }
+  ],
+  "skillGroups": 1,
+  "positions": [
+    { "org": "Statistical Learning Lab", "role": "Graduate Researcher", "dates": "2019 – 2023", "bullets": 2 }
+  ],
+  "education": ["Ph.D., Applied Statistics — State University", "B.S., Mathematics — Riverside College"],
+  "projectsMin": 1
+}
