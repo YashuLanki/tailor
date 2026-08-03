@@ -135,6 +135,46 @@
     return { score, hits };
   }
 
+  const LINES_PER_PAGE = 48;
+  const MAX_BULLETS_PER_POSITION = 4;
+
+  /** Lines consumed by everything that isn't an experience bullet. */
+  function fixedLines() {
+    let n = 4;                                                    // header block
+    if (plain(state.summary)) n += 2 + Math.ceil(len(state.summary) / 118);
+    const sk = (state.skills || []).filter((g) => g.name || g.items).length;
+    if (sk) n += 2 + sk;
+    const ed = (state.education || []).filter((e) => e.degree).length;
+    if (ed) n += 2 + ed;
+    return n;
+  }
+
+  /* Pick the highest-scoring bullets that actually fit the page, rather than
+     selecting everything found. This is the editorial step: a resume is a
+     selection, and a two-page dump of every bullet is not a tailored document. */
+  function autoSelectToFit(scored) {
+    chosen.clear();
+    const budget = LINES_PER_PAGE * (state.pages || 1) - fixedLines();
+    const perPosition = {};
+    const posSeen = new Set();
+    let used = 0;
+
+    for (const s of scored) {
+      if (s.score <= 0) continue;                                 // no relevance to this posting
+      const posId = s.key.startsWith("p") ? s.key.split("b")[0] : "proj";
+      if ((perPosition[posId] || 0) >= MAX_BULLETS_PER_POSITION) continue;
+
+      const cost = len(s.text) > BUDGET.bullet.l1[1] ? 2 : 1;
+      const heading = posSeen.has(posId) ? 0 : 2;                 // position title + subtitle
+      if (used + cost + heading > budget) continue;
+
+      chosen.add(s.key);
+      perPosition[posId] = (perPosition[posId] || 0) + 1;
+      posSeen.add(posId);
+      used += cost + heading;
+    }
+  }
+
   function runMatch() {
     const jd = $("#f-jd").value.trim();
     if (!jd) { $("#match-note").textContent = "Paste a job description first."; return; }
@@ -150,8 +190,7 @@
       .sort((a, b) => b.score - a.score);
     const max = scored[0].score || 1;
 
-    // Auto-select anything with a real match; user adjusts from there.
-    scored.forEach((s) => { if (s.score >= max * 0.35 && s.score > 0) chosen.add(s.key); });
+    autoSelectToFit(scored);
 
     $("#kw-cloud").innerHTML = keywords.slice(0, 30)
       .map((t) => '<span class="chip' + (t.count >= 3 ? " hot" : "") + '">' + esc(t.term) + " ·" + t.count + "</span>")
@@ -489,7 +528,9 @@
 
       delete merged._sample;
       state = merged;
-      chosen = new Set(allItems().map((i) => i.key));   // everything on until a JD narrows it
+      // Deliberately select nothing. Scoring against a posting is what picks bullets;
+      // pre-selecting everything produced a multi-page dump instead of a resume.
+      chosen = new Set();
       save(); renderLibrary(); render();
       $("#review-card").open = true;
 
