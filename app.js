@@ -311,12 +311,28 @@
 
   function updateSummaryCount() {
     const n = len(state.summary);
+    const key = (state.pages === 1) ? "summary_resume_1p" : "summary_resume";
     const [lo, hi] = BUDGET.summary[state.pages] || BUDGET.summary[1];
     const el = $("#sum-count");
-    if (!el) return;
-    el.textContent = n ? n : "0";
-    el.title = "target " + lo + "–" + hi + " characters";
-    el.className = "badge" + (!n ? "" : (n < lo || n > hi) ? " warn" : " on");
+    if (el) {
+      el.textContent = n ? n : "none";
+      el.title = n ? "target " + lo + "–" + hi + " characters" : "no summary — the section is omitted";
+      el.className = "badge" + (!n ? " warn" : (n < lo || n > hi) ? " warn" : " on");
+    }
+
+    /* The app never writes a summary. So when there isn't one, say so rather than
+       silently dropping the section — otherwise it looks like a bug. */
+    const note = $("#sum-note");
+    if (note) {
+      if (!n) {
+        note.className = "hint warn-text";
+        note.textContent = "None of your documents had a summary, so the resume omits that section. " +
+          "Write one here if you want it — the app will not invent one for you.";
+      } else {
+        note.className = "hint";
+        note.textContent = n < lo || n > hi ? "Target " + lo + "–" + hi + " characters for this page count." : "";
+      }
+    }
   }
 
   /** Keep the collapsed section headers honest about what's inside them. */
@@ -418,12 +434,37 @@
 
     $("#sheet").innerHTML = out.join("");
     renderAudit();
+    renderPolish();
     updateBadges();
   }
 
   /* The old readout ("~57 lines, about 2 pages, 6 bullets past the 2-line limit")
      was internal bookkeeping leaking into the interface. Users get one plain fact;
      the detailed budgets stay available per-bullet in the Library. */
+  /* Language checks from the CLI kit's ai_fingerprint_rules.md. Advisory only —
+     the app flags patterns and names the fix, and never edits your words. */
+  function renderPolish() {
+    if (!window.Polish) return;
+    const card = $("#polish-card"), list = $("#polish-list"), badge = $("#polish-badge");
+    if (!card) return;
+
+    const res = window.Polish.scan(state, chosen);
+    const flags = res.flags, counts = res.counts;
+    badge.textContent = flags.length ? counts.high + " to fix" : "clean";
+    badge.className = "badge" + (counts.high ? " warn" : flags.length ? "" : " on");
+
+    if (!flags.length) {
+      list.innerHTML = '<p class="hint">Nothing flagged.</p>';
+      return;
+    }
+    const label = { high: "fix", med: "consider", low: "minor" };
+    list.innerHTML = flags.map((f) =>
+      '<div class="flag flag-' + f.severity + '">' +
+      '<span class="flag-tag">' + label[f.severity] + "</span>" +
+      '<div><div class="flag-what">' + esc(f.what) + '  <span class="flag-where">' + esc(f.where) + "</span></div>" +
+      '<div class="flag-fix">' + esc(f.fix) + "</div></div></div>").join("");
+  }
+
   function renderAudit() {
     const n = allItems().filter((i) => chosen.has(i.key)).length;
     const el = $("#audit");

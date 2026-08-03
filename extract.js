@@ -690,6 +690,13 @@
       delete lib._notes;
       // Unconditional: no ingest path may return a library containing duplicates.
       dedupeLibrary(lib);
+
+      /* Nothing is seeded into the summary from a cover letter. Letter prose addresses
+         one employer in a different register, and every heuristic to salvage it made
+         things worse ("In this role, I was responsible…" reads as self-description but
+         trips any filter for employer-directed language). The app never composes a
+         summary — it tells the user there isn't one instead. */
+      delete lib._letter;
       lib.notes = notes;
     }
     return { lib, notes };

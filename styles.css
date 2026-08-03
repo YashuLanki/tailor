@@ -295,3 +295,24 @@ footer a { color: var(--accent); }
 
 .card.tight { padding: 14px 16px; }
 .card.tight .hint:empty { display: none; }
+
+.hint.warn-text { color: var(--warn); }
+
+/* ── language check flags ── */
+.flag {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--line); background: #fcfcfd;
+}
+.flag-tag {
+  flex: none; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+  padding: 2px 7px; border-radius: 20px; margin-top: 1px;
+  background: var(--line-2); color: var(--ink-3);
+}
+.flag-high .flag-tag { background: var(--bad-soft); color: var(--bad); }
+.flag-med .flag-tag { background: var(--warn-soft); color: var(--warn); }
+.flag-what { font-size: 13.5px; }
+.flag-where { font-size: 11.5px; color: var(--ink-3); }
+.flag-fix { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+@media (prefers-color-scheme: dark) { .flag { background: #171a20; } }
+@media print { #polish-card { display: none !important; } }

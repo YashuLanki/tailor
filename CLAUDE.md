@@ -81,6 +81,27 @@ counting groups alone undercounts the page badly.
 `styles.css .sheet` and `docxgen.js` implement the same layout twice, in CSS and in OOXML. Change one and you
 must change the other, or the preview stops predicting the export.
 
+## Language checks (`polish.js`)
+
+A deterministic port of the CLI kit's `resume_builder/support/ai_fingerprint_rules.md`: banned words with
+replacements, banned phrases, metaphorical "landscape"/"journey", em-dash count in prose, three consecutive
+sentences of similar length, `X, Y, and Z` overuse, and passive-voice ratio.
+
+**It flags and names the fix. It never edits.** Same principle as the rest of the app.
+
+The `-ing` ending rule is the subtle one. The kit calls a trailing participle the single most reliable structural
+marker, but flagging *all* of them is wrong — "…replacing a four-hour manual rebuild" is concrete and good. Only
+a filler participle (`enabling`, `contributing`, `driving`, …) followed by an abstraction (`outcomes`,
+`efficiency`, `better X`) with no number is flagged. Verify both directions when touching it: good bullets must
+stay clean, vague ones must still be caught.
+
+## The summary is never generated
+
+If no uploaded document has a Summary section, the resume omits it and the Library says so plainly. The app does
+not compose one, and does not seed one from a cover letter either — letter prose addresses a specific employer in
+a different register, and every heuristic to salvage it made things worse. Saying "there isn't one, write one if
+you want it" is the honest behaviour.
+
 ## Formatting markers
 
 Only three, everywhere in the data model: `**bold**`, `*italic*`, `[label](url)`. Everything else is literal

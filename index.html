@@ -80,6 +80,7 @@
     <details class="card">
       <summary><h2>Summary</h2> <span class="badge" id="sum-count">0</span></summary>
       <textarea id="f-summary" rows="4" placeholder="What you build, and one concrete result."></textarea>
+      <p class="hint" id="sum-note"></p>
     </details>
 
     <details class="card">
@@ -150,6 +151,13 @@
     </div>
     <div id="audit" class="audit"></div>
   </div>
+  <details class="card" id="polish-card">
+    <summary><h2>Language check</h2> <span class="badge" id="polish-badge">0</span></summary>
+    <p class="hint">Patterns readers recognise as machine-written. Your bullets came from documents you
+    already had, so some may carry them. Nothing is rewritten for you — each flag names the fix.</p>
+    <div id="polish-list" class="stack"></div>
+  </details>
+
   <div class="sheet-wrap">
     <article id="sheet" class="sheet"></article>
   </div>
@@ -165,6 +173,7 @@
 <script src="vendor/fflate.js"></script>
 <script src="vendor/docx.iife.js"></script>
 <script src="extract.js"></script>
+<script src="polish.js"></script>
 <script src="docxgen.js"></script>
 <script src="app.js"></script>
 </body>
