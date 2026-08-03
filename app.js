@@ -61,6 +61,8 @@
       if (!raw) return false;
       const d = JSON.parse(raw);
       state = Object.assign(blank(), d.state);
+      // Libraries stored before duplicate detection improved can carry repeats.
+      if (window.Extract && window.Extract.dedupeLibrary) window.Extract.dedupeLibrary(state);
       chosen = new Set(d.chosen || []);
       return true;
     } catch (e) { return false; }
@@ -227,7 +229,21 @@
     $("#gap-card").hidden = false;
 
     const n = scored.filter((s) => chosen.has(s.key)).length;
-    $("#match-note").textContent = keywords.length + " terms found · " + n + " bullets selected";
+    $("#match-note").textContent = "";
+
+    // The detail panels stay available but closed — the useful signal is "it worked,
+    // go look at the result", not a wall of term frequencies.
+    $("#kw-card").open = false;
+    $("#gap-card").open = false;
+    $("#match-card").open = false;
+
+    const done = $("#done-banner");
+    if (done) {
+      done.hidden = false;
+      done.innerHTML = '<strong>Done.</strong> Scored ' + scored.length + " bullets against this posting and " +
+        "picked the " + n + " strongest that fit the page. " +
+        '<button class="primary" data-goto="p-preview" type="button">Look at the preview →</button>';
+    }
     save();
     render();
   }

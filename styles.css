@@ -263,8 +263,21 @@ footer a { color: var(--accent); }
   .sheet { width: 100%; min-height: 0; padding: 26px; font-size: 11pt; }
 }
 
+/* ── "done" banner on the job step ── */
+.done {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  background: var(--good-soft); color: var(--good);
+  border: 1px solid var(--good); border-radius: var(--radius);
+  padding: 13px 16px; margin: 0 0 14px; font-size: 14px;
+}
+.done strong { color: inherit; }
+
 @media print {
   .topbar, .tabs, .preview-actions, footer, .panel:not(#p-preview) { display: none !important; }
+  /* Never print the editing aids. The over-length highlight is guidance while
+     writing; on the finished document it reads as an error the reader can see. */
+  .sheet .over { background: none !important; outline: none !important; }
+  .sheet a { color: #000 !important; text-decoration: underline; }
   body { background: #fff; }
   main { padding: 0; max-width: none; }
   .sheet { width: auto; min-height: 0; box-shadow: none; padding: 0; }

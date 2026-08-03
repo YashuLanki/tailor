@@ -438,6 +438,59 @@
       .split(/\s+/).filter((w) => w.length > 2).slice(0, 8).join(" ");
   }
 
+  /** Every significant word, for containment comparison. */
+  function wordSet(text) {
+    return new Set(String(text || "").toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/).filter((w) => w.length > 3));
+  }
+
+  /* True when one text substantially contains the other. A first-N-words key
+     cannot catch "X description" against "**Title** - X description", which is
+     exactly what happens when the same project arrives from two resumes that
+     format it differently. */
+  function nearDuplicate(a, b) {
+    const A = wordSet(a), B = wordSet(b);
+    if (A.size < 4 || B.size < 4) return false;
+    const [small, large] = A.size <= B.size ? [A, B] : [B, A];
+    let shared = 0;
+    small.forEach((w) => { if (large.has(w)) shared++; });
+    return shared / small.size >= 0.8;
+  }
+
+  /** Collapse near-duplicates in a list, keeping the fullest version of each. */
+  function dedupeTexts(items, get) {
+    const out = [];
+    items.forEach((item) => {
+      const text = get(item);
+      const i = out.findIndex((o) => nearDuplicate(get(o), text));
+      if (i === -1) { out.push(item); return; }
+      if (text.length > get(out[i]).length) out[i] = item;
+    });
+    return out;
+  }
+
+  /** Clean duplicates that already accumulated in a stored library. */
+  function dedupeLibrary(lib) {
+    if (!lib) return lib;
+    lib.projects = dedupeTexts(lib.projects || [], (p) => p.text || "");
+    (lib.positions || []).forEach((pos) => {
+      pos.bullets = dedupeTexts(pos.bullets || [], (b) => b.text || "");
+    });
+    // Then across positions — the same achievement often lands under two employers.
+    const seen = [];
+    (lib.positions || []).forEach((pos) => {
+      pos.bullets = (pos.bullets || []).filter((b) => {
+        if (seen.some((t) => nearDuplicate(t, b.text))) return false;
+        seen.push(b.text);
+        return true;
+      });
+    });
+    lib.projects = (lib.projects || []).filter((p) => !seen.some((t) => nearDuplicate(t, p.text)));
+    lib.education = dedupeTexts(lib.education || [], (e) => e.degree || "");
+    return lib;
+  }
+
   const DEGREE_WORD = /\b(m\.?s|m\.?a|m\.?b\.?a|b\.?s|b\.?a|ph\.?d|ed\.?d|j\.?d|m\.?eng|m\.?ed|master|bachelor|doctor|doctorate|associate|associate's|diploma|certificate)\b\.?/i;
   const SCHOOL_WORD = /\b(university|college|institute|school|academy|polytechnic|seminary)\b/i;
 
@@ -507,8 +560,9 @@
     // Bullets are deduplicated across the WHOLE library, not just within a position,
     // because the same achievement is usually worded slightly differently per resume.
     const seen = new Set();
-    o.positions.forEach((x) => x.bullets.forEach((b) => seen.add(bulletKey(b.text))));
-    o.projects.forEach((x) => seen.add(bulletKey(x.text)));
+    const pool = [];
+    o.positions.forEach((x) => x.bullets.forEach((b) => { seen.add(bulletKey(b.text)); pool.push(b.text); }));
+    o.projects.forEach((x) => { seen.add(bulletKey(x.text)); pool.push(x.text); });
 
     add.positions.forEach((p) => {
       const key = orgKey(p.org) || orgKey(p.role);
@@ -522,7 +576,8 @@
       p.bullets.forEach((b) => {
         const bk = bulletKey(b.text);
         if (!bk || seen.has(bk)) return;
-        seen.add(bk);
+        if (pool.some((t) => nearDuplicate(t, b.text))) return;
+        seen.add(bk); pool.push(b.text);
         target.bullets.push(b);
       });
       ["role", "org", "location", "dates", "theme"].forEach((k) => { if (!target[k] && p[k]) target[k] = p[k]; });
@@ -531,7 +586,13 @@
     add.projects.forEach((pr) => {
       const bk = bulletKey(pr.text);
       if (!bk || seen.has(bk)) return;
-      seen.add(bk);
+      const i = o.projects.findIndex((x) => nearDuplicate(x.text, pr.text));
+      if (i !== -1) {   // same project, keep the fuller wording
+        if ((pr.text || "").length > (o.projects[i].text || "").length) o.projects[i] = pr;
+        return;
+      }
+      if (pool.some((t) => nearDuplicate(t, pr.text))) return;
+      seen.add(bk); pool.push(pr.text);
       o.projects.push(pr);
     });
     add.education.forEach((e) => {
@@ -572,5 +633,5 @@
     return { lib, notes };
   }
 
-  global.Extract = { ingest, readFile, parseResume, merge };
+  global.Extract = { ingest, readFile, parseResume, merge, dedupeLibrary, nearDuplicate };
 })(window);
