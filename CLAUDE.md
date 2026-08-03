@@ -94,13 +94,26 @@ first and nearly always fails (job boards send no permissive CORS headers), then
 back to `r.jina.ai` and `corsproxy.io`. **That discloses the posting's URL to a third party**, which is stated in
 the UI and README. The paste path is fully local. Preserve that distinction and that disclosure.
 
-## Known weak spot
+## How duplicates are prevented
 
-Position and section detection is unreliable across varied resume formats. Federal-style resumes with address
-and "40 hours/week" lines, and PDFs that wrap sentences mid-line, produce phantom positions. Fixes so far have
-been narrow guards: `looksLikeDegree()` rejects wrapped coursework fragments, `orgKey()` matches employers
-fuzzily, `sameDegree()` collapses `M.S.` against `Master of Science`. Each new regex risks breaking another
-format — verify against several real documents before and after any parser change.
+Users upload several versions of the same resume, so the same employer and achievement arrive repeatedly with
+different wording. Four mechanisms, all in `extract.js`:
+
+- `parseHeader()` resolves `"Role, Employer, City, ST"`, `"Employer — Role"` and `"Role — Employer — City"` to the
+  same fields, so the dedup key is stable. `ROLE_WORD`/`ORG_WORD` decide which side of a separator is the
+  employer — job titles are a small stable vocabulary, company names are not.
+- `orgKey()` matches employers fuzzily: location tails, corporate suffixes and punctuation are stripped.
+- `nearDuplicate()` compares by **containment** — 80% of the shorter text's significant words appearing in the
+  longer one means they are the same item, and the fuller wording wins. A first-N-words key cannot see that
+  `"X description"` and `"**Title** — X description"` are the same project.
+- `ADMIN_LINE` drops federal-resume address, hours-per-week and supervisor lines, which otherwise become phantom
+  employers named `"40 hours/week"` that swallow every following bullet.
+
+`dedupeLibrary()` runs **unconditionally at the end of `ingest()`** and again on `load()`, so no path can produce
+or retain duplicates. Do not make either call conditional.
+
+Section detection remains heuristic. Each new regex risks breaking a format it was not written for, which is what
+the corpus is for — run `workflows/verify_parser.md` before and after.
 
 ## Verifying a change
 
@@ -118,9 +131,11 @@ node tools/build_docx_headless.mjs --sample --out .tmp/out.docx
 python3 tools/validate_docx.py --file .tmp/out.docx --expect-pages 1 --expect-font "Times New Roman"
 ```
 
-Current parser baseline is **88.4%** across four layout styles. `01_chronological` and `03_academic_cv` are at
-100%; `02_federal` and `04_compact` have known open failures documented in the workflow. Never edit an
-`expected.json` to make a check pass — ground truth changes only when the fixture's content does.
+Current parser baseline is **100% across five cases** (103 checks). Never edit an `expected.json` to make a
+check pass — ground truth changes only when the fixture's content does.
+
+`05_dupes` ingests two versions of the same resume together and asserts no duplicate bullets, projects or
+degrees survive. That is the case most users hit, so keep it passing.
 
 You can also poke at it in the browser console:
 

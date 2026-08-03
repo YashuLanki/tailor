@@ -50,9 +50,11 @@ function summarize(lib) {
       location: p.location || "",
       dates: p.dates || "",
       bullets: (p.bullets || []).length,
+      bulletTexts: (p.bullets || []).map((b) => b.text),
     })),
     education: (lib.education || []).map((e) => ({ degree: e.degree, dates: e.dates || "" })),
     projects: (lib.projects || []).length,
+    projectTexts: (lib.projects || []).map((p) => p.text),
   };
 }
 
@@ -63,27 +65,37 @@ if (!fs.existsSync(FIXTURES)) {
   process.exit(2);
 }
 
-const files = fs.readdirSync(FIXTURES).filter((f) => /\.(docx|txt|md)$/i.test(f)).sort();
+const all = fs.readdirSync(FIXTURES).filter((f) => /\.(docx|txt|md)$/i.test(f)).sort();
 const skipped = fs.readdirSync(FIXTURES).filter((f) => /\.pdf$/i.test(f));
+
+/* Files named "NN_case__a" and "NN_case__b" are ingested TOGETHER as one case.
+   That is how most people actually use this — an old resume plus a newer one — so
+   deduplication across documents needs a fixture, not just a unit test. */
+const groups = new Map();
+for (const name of all) {
+  const stem = path.parse(name).name;
+  const key = stem.includes("__") ? stem.split("__")[0] : stem;
+  if (!groups.has(key)) groups.set(key, []);
+  groups.get(key).push(name);
+}
 
 const report = { generated: null, cases: {}, skipped };
 
-for (const name of files) {
-  const buf = fs.readFileSync(path.join(FIXTURES, name));
-  const file = new ctx.File([buf], name);
+for (const [key, names] of groups) {
+  const files = names.map((n) => new ctx.File([fs.readFileSync(path.join(FIXTURES, n))], n));
   try {
-    const { lib, notes } = await ctx.Extract.ingest([file]);
-    report.cases[path.parse(name).name] = { ok: true, notes, parsed: summarize(lib) };
-    const p = report.cases[path.parse(name).name].parsed;
-    console.log(`  ${name}: ${p.positions.length} positions, ` +
-      `${p.positions.reduce((n, x) => n + x.bullets, 0)} bullets, ` +
-      `${p.education.length} degrees, ${p.skillGroups} skill groups`);
+    const { lib, notes } = await ctx.Extract.ingest(files);
+    report.cases[key] = { ok: true, notes, parsed: summarize(lib), files: names };
+    const p = report.cases[key].parsed;
+    console.log(`  ${key}${names.length > 1 ? ` (${names.length} files)` : ""}: ` +
+      `${p.positions.length} positions, ${p.positions.reduce((n, x) => n + x.bullets, 0)} bullets, ` +
+      `${p.education.length} degrees, ${p.projects} projects`);
   } catch (err) {
-    report.cases[path.parse(name).name] = { ok: false, error: err.message };
-    console.error(`  ${name}: FAILED — ${err.message}`);
+    report.cases[key] = { ok: false, error: err.message };
+    console.error(`  ${key}: FAILED — ${err.message}`);
   }
 }
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(report, null, 2));
-console.log(`\n${files.length} parsed${skipped.length ? `, ${skipped.length} pdf skipped` : ""} -> ${OUT}`);
+console.log(`\n${groups.size} case(s) parsed${skipped.length ? `, ${skipped.length} pdf skipped` : ""} -> ${OUT}`);

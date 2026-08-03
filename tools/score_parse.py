@@ -109,6 +109,25 @@ def score_case(exp: dict, got: dict) -> tuple[list[str], list[str]]:
         check(not any(contains(e["degree"], avoid) for e in got["education"]),
               f"no phantom degree containing {avoid!r}")
 
+    # Uniqueness, the thing users actually notice when it fails.
+    def near_dupe(a, b):
+        A = {w for w in norm(a).split() if len(w) > 3}
+        B = {w for w in norm(b).split() if len(w) > 3}
+        if len(A) < 4 or len(B) < 4:
+            return False
+        small, large = (A, B) if len(A) <= len(B) else (B, A)
+        return len(small & large) / len(small) >= 0.8
+
+    if exp.get("noDuplicateBullets"):
+        texts = [t for p in got["positions"] for t in p.get("bulletTexts", [])]
+        dupes = [(a, b) for i, a in enumerate(texts) for b in texts[i + 1:] if near_dupe(a, b)]
+        check(not dupes, "no duplicate bullets" + (f" (found {len(dupes)})" if dupes else ""))
+
+    if exp.get("noDuplicateProjects"):
+        texts = got.get("projectTexts", [])
+        dupes = [(a, b) for i, a in enumerate(texts) for b in texts[i + 1:] if near_dupe(a, b)]
+        check(not dupes, "no duplicate projects" + (f" (found {len(dupes)})" if dupes else ""))
+
     if "projects" in exp:
         check(got["projects"] == exp["projects"], f"{exp['projects']} projects (got {got['projects']})")
     if "projectsMin" in exp:

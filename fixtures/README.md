@@ -36,14 +36,24 @@ truth changes only when the fixture's content changes.
 | `02_federal` | Address, hours-per-week and supervisor lines | Those lines becoming phantom positions |
 | `03_academic_cv` | Education before experience, a Publications section | Losing publications; misordered sections |
 | `04_compact` | Organisation-first, em-dash separated, "to" in dates | org/role swapping; name inline with contact |
+| `05_dupes` | **Two versions of the same resume, ingested together** | Duplicate employers, bullets and degrees surviving a merge |
 
 All cases use the same fictional person, `ALEX MORGAN`, with `example.com` addresses.
 Keep that convention when adding cases.
+
+## Multi-file cases
+
+Files named `NN_case__a.html` and `NN_case__b.html` are **ingested together** as one case.
+That is how most people actually use the app — an old resume plus a newer one — so
+cross-document deduplication needs a fixture rather than a unit test. `05_dupes` is
+that case, and its expected file sets `noDuplicateBullets` and `noDuplicateProjects`,
+which assert uniqueness directly rather than inferring it from a count.
 
 ## Still to cover
 
 - A PDF whose sentences wrap mid-line (build with `--pdf`, but note `parse_corpus.mjs`
   skips PDFs — pdf.js needs the browser runner)
+- A resume in a non-US layout (day-first dates, no state abbreviations)
 - A two-column layout, which is where text-extraction order usually breaks down
 - A resume with no section headings at all
 - A CV long enough to span pages

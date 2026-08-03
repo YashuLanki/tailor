@@ -244,8 +244,17 @@
 
     if (parts.length === 1) out.role = parts[0];
     else if (parts.length >= 2) {
-      out.role = parts[0];
-      out.org = parts.slice(1).join(", ");
+      let role = parts[0];
+      let org = parts.slice(1).join(", ");
+      // "Brightline Logistics — Data Analyst" puts the employer first. Swap when the
+      // second part names a job and the first does not.
+      const firstIsRole = ROLE_WORD.test(role), secondIsRole = ROLE_WORD.test(org);
+      const firstIsOrg = ORG_WORD.test(role), secondIsOrg = ORG_WORD.test(org);
+      if ((secondIsRole && !firstIsRole) || (firstIsOrg && !secondIsOrg && secondIsRole)) {
+        const t = role; role = org; org = t;
+      }
+      out.role = role;
+      out.org = org;
     }
     return out;
   }
@@ -298,10 +307,20 @@
     });
     lib.profile.contact = [...contact];
 
-    // Name: the first line that looks like a person, not contact details.
+    /* Name: normally its own line. Compact layouts put it inline
+       ("ALEX MORGAN · Austin, TX · (555) 201-3344"), so a line carrying contact
+       details is still worth inspecting — just look only at its first segment. */
     for (const p of head) {
-      const t = p.text.replace(/\s{2,}/g, " ").trim();
-      if (!t || EMAIL.test(t) || PHONE.test(t) || URL_RE.test(t)) continue;
+      let t = p.text.replace(/\s{2,}/g, " ").trim();
+      if (!t) continue;
+      if (EMAIL.test(t) || PHONE.test(t) || URL_RE.test(t)) {
+        const first = t.split(/\s*[·•|,]\s*/)[0].trim();
+        const words = first.split(/\s+/);
+        const nameish = first && words.length >= 2 && words.length <= 5 &&
+          !/\d/.test(first) && !EMAIL.test(first) && !PHONE.test(first) && !URL_RE.test(first);
+        if (!nameish) continue;
+        t = first;
+      }
       if (t.split(/\s+/).length > 6) continue;
       const cm = t.match(/^(.+?),\s*(Ph\.?D\.?|M\.?S\.?|M\.?A\.?|M\.?B\.?A\.?|B\.?S\.?|M\.?Eng\.?)$/i);
       if (cm) { lib.profile.name = cm[1].trim(); lib.profile.credential = cm[2].trim(); }
@@ -523,6 +542,12 @@
     return lib;
   }
 
+  /* Which side of "A — B" is the employer? Job titles are a small, stable
+     vocabulary; company names are not. So detect the title and infer the rest.
+     Covers "Brightline Logistics — Data Analyst" as well as the reverse. */
+  const ROLE_WORD = /\b(analyst|engineer|scientist|developer|manager|director|intern|internship|associate|assistant|specialist|consultant|coordinator|lead|architect|administrator|technician|instructor|faculty|professor|lecturer|researcher|fellow|officer|supervisor|clerk|designer|strategist|advisor|adviser|accountant|auditor|recruiter|representative|agent|nurse|therapist|paralegal|editor|writer|producer|buyer|planner|trainee|apprentice|volunteer|founder|owner|principal|partner|president|chief|head|vp|svp|evp)\b/i;
+  const ORG_WORD = /\b(inc|llc|ltd|corp|corporation|company|co|group|university|college|school|academy|bank|labs?|laboratory|institute|foundation|systems|technologies|technology|solutions|services|partners|associates|holdings|industries|enterprises|investments|capital|ventures|agreement|hospital|clinic|health|medical|centre|center|department|ministry|agency|bureau|council|authority|district|society|association|studio)\b\.?/i;
+
   const DEGREE_WORD = /\b(m\.?s|m\.?a|m\.?b\.?a|b\.?s|b\.?a|ph\.?d|ed\.?d|j\.?d|m\.?eng|m\.?ed|master|bachelor|doctor|doctorate|associate|associate's|diploma|certificate)\b\.?/i;
   const SCHOOL_WORD = /\b(university|college|institute|school|academy|polytechnic|seminary)\b/i;
 
@@ -661,7 +686,12 @@
         notes.push({ file: f.name, ok: false, error: err.message });
       }
     }
-    if (lib) { delete lib._notes; lib.notes = notes; }
+    if (lib) {
+      delete lib._notes;
+      // Unconditional: no ingest path may return a library containing duplicates.
+      dedupeLibrary(lib);
+      lib.notes = notes;
+    }
     return { lib, notes };
   }
 
