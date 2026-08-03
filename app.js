@@ -203,39 +203,8 @@
 
     autoSelectToFit(scored);
 
-    $("#kw-cloud").innerHTML = keywords.slice(0, 30)
-      .map((t) => '<span class="chip' + (t.count >= 3 ? " hot" : "") + '">' + esc(t.term) + " ·" + t.count + "</span>")
-      .join("");
-    $("#kw-card").hidden = false;
-
-    $("#match-list").innerHTML = scored.map((s) => {
-      const tier = s.score >= max * 0.6 ? "s3" : s.score >= max * 0.3 ? "s2" : s.score > 0 ? "s1" : "s0";
-      return '<div class="match">' +
-        '<input type="checkbox" data-key="' + s.key + '"' + (chosen.has(s.key) ? " checked" : "") + '>' +
-        '<div class="body"><div class="src">' + esc(s.src) + "</div>" +
-        '<div class="txt">' + highlight(s.text, s.hits) + "</div></div>" +
-        '<span class="score ' + tier + '">' + s.score + "</span></div>";
-    }).join("");
-    $("#match-card").hidden = false;
-    $("#match-card").open = true;
-
-    // Terms the JD stresses that no bullet mentions.
-    const covered = new Set();
-    scored.forEach((s) => s.hits.forEach((h) => covered.add(h)));
-    const gaps = keywords.filter((t) => !covered.has(t.term) && t.count >= 2).slice(0, 24);
-    $("#gap-cloud").innerHTML = gaps.length
-      ? gaps.map((t) => '<span class="chip gap">' + esc(t.term) + "</span>").join("")
-      : '<span class="hint">Your bullets touch every frequent term in this posting.</span>';
-    $("#gap-card").hidden = false;
-
     const n = scored.filter((s) => chosen.has(s.key)).length;
     $("#match-note").textContent = "";
-
-    // The detail panels stay available but closed — the useful signal is "it worked,
-    // go look at the result", not a wall of term frequencies.
-    $("#kw-card").open = false;
-    $("#gap-card").open = false;
-    $("#match-card").open = false;
 
     const done = $("#done-banner");
     if (done) {
@@ -248,13 +217,7 @@
     render();
   }
 
-  function highlight(text, hits) {
-    let s = esc(plain(text));
-    hits.slice().sort((a, b) => b.length - a.length).forEach((h) => {
-      s = s.replace(new RegExp("(" + h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi"), "<mark>$1</mark>");
-    });
-    return s;
-  }
+
 
   // ─────────────────────────── Library UI ───────────────────────────
 
@@ -380,7 +343,6 @@
 
     const total = bullets + projects;
     set("lib-badge", total ? total + " bullets" : "empty", total ? "on" : "warn");
-    set("sel-badge", chosen.size + " on", chosen.size ? "on" : "warn");
     updateSummaryCount();
   }
 
@@ -653,7 +615,7 @@
       state = blank(); chosen = new Set();
       $("#ingest-log").hidden = true; $("#ingest-log").innerHTML = "";
       $("#f-jd").value = ""; $("#f-jd-url").value = "";
-      ["kw-card", "match-card", "gap-card"].forEach((i) => { $("#" + i).hidden = true; });
+      $("#done-banner").hidden = true;
       renderLibrary(); render(); goto("p-upload");
       return;
     }
