@@ -166,6 +166,13 @@ numbering definitions are identical. What the browser exports is what the CLI ex
 
 ---
 
+## Contributing / working on this
+
+- **[CLAUDE.md](CLAUDE.md)** — architecture, the two calibrations that must stay in sync, how to verify a change
+- **[AGENTS.md](AGENTS.md)** — WAT framework (Workflows · Agents · Tools) and a proposed verification harness
+
+---
+
 <div align="center">
 
 **MIT licensed** · see [LICENSE](LICENSE)
