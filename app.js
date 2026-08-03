@@ -203,15 +203,13 @@
 
     autoSelectToFit(scored);
 
-    const n = scored.filter((s) => chosen.has(s.key)).length;
     $("#match-note").textContent = "";
 
     const done = $("#done-banner");
     if (done) {
       done.hidden = false;
-      done.innerHTML = '<strong>Done.</strong> Scored ' + scored.length + " bullets against this posting and " +
-        "picked the " + n + " strongest that fit the page. " +
-        '<button class="primary" data-goto="p-preview" type="button">Look at the preview →</button>';
+      done.innerHTML = '<strong>Done.</strong> Your resume is ready. ' +
+        '<button class="primary" data-goto="p-preview" type="button">Next →</button>';
     }
     save();
     render();
@@ -537,15 +535,14 @@
 
     const attempts = [{ name: "direct", url: (u) => u }].concat(READERS);
     for (const a of attempts) {
-      note.textContent = "Reading the posting… (" + a.name + ")";
+      note.textContent = "Reading the posting…";
       try {
         const res = await fetch(a.url(url));
         if (!res.ok) throw new Error("HTTP " + res.status);
         const text = textFromHtml(await res.text());
         if (text.length < 300) throw new Error("returned almost no text");
         $("#f-jd").value = text;
-        note.innerHTML = "Read " + text.length.toLocaleString() + " characters via <strong>" + esc(a.name) +
-          "</strong>. Scoring now — check the text below if the results look off.";
+        note.textContent = "";
         runMatch();
         return;
       } catch (err) { /* try the next route */ }
