@@ -283,6 +283,7 @@
     // ── walk the sections ──
     let cur = null;
     let pending = null;          // position being built
+    let pendingProject = null;   // project whose title we've seen, awaiting its description
     const summaryParts = [];
 
     const pushPending = () => {
@@ -293,7 +294,7 @@
     for (let i = firstSection; i < paras.length; i++) {
       const p = paras[i];
       const sec = sectionOf(p.text);
-      if (sec) { pushPending(); cur = sec; continue; }
+      if (sec) { pushPending(); pendingProject = null; cur = sec; continue; }
       if (!cur) continue;
 
       if (cur === "summary") { summaryParts.push(p.text); continue; }
@@ -328,9 +329,18 @@
       }
 
       if (cur === "projects") {
-        if (bulletish(p)) { lib.projects.push({ text: stripMarker(p.text) }); continue; }
-        if (p.text.length > 40) lib.projects.push({ text: p.text });
-        else if (p.text) lib.projects.push({ text: "**" + p.text + "**" });
+        // A project is a short title line followed by one or more description lines.
+        // Emitting those separately produces an orphan bullet that is just a name,
+        // so a title opens a pending project and following lines fold into it.
+        const short = p.text.length <= 60 && !bulletish(p) && !/[.;]$/.test(p.text);
+        if (short) {
+          pendingProject = { title: p.text, body: [] };
+          lib.projects.push(pendingProject);
+          continue;
+        }
+        const line = bulletish(p) ? stripMarker(p.text) : p.text;
+        if (pendingProject) pendingProject.body.push(line);
+        else lib.projects.push({ title: "", body: [line] });
         continue;
       }
 
@@ -382,6 +392,14 @@
     pushPending();
 
     lib.summary = summaryParts.join(" ").replace(/\s+/g, " ").trim();
+
+    // Flatten projects to "**Title** — description", the shape the renderer expects.
+    lib.projects = lib.projects.map((pr) => {
+      if (typeof pr.text === "string") return pr;
+      const body = (pr.body || []).join(" ").replace(/\s+/g, " ").trim();
+      if (!pr.title) return { text: body };
+      return { text: body ? "**" + pr.title + "** — " + body : "**" + pr.title + "**" };
+    }).filter((pr) => (pr.text || "").trim());
 
     // A cover letter is addressed TO an employer, so its header block is the
     // employer's address, not yours. Keep only the prose; discard the structure.

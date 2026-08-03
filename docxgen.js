@@ -16,7 +16,8 @@
 
   const FONT = "Times New Roman";
   // Half-points: 21 = 10.5pt. Times runs small, so body sits a touch above 10pt.
-  const SIZE = { body: 21, name: 34, heading: 23 };
+  const SIZE = { body: 20, name: 36, heading: 22, tagline: 21 };
+const GREY = "5A5A5A";   // dates, per the reference layout
 
   // `**bold**`, `*italic*`, `[label](url)` -> runs
   function inline(text, base) {
@@ -42,11 +43,9 @@
 
   function sectionHeading(text) {
     return new Paragraph({
-      spacing: { before: 200, after: 50 },
-      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000", space: 2 } },
-      children: [new TextRun({
-        text: text.toUpperCase(), bold: true, size: SIZE.heading, font: FONT, characterSpacing: 20,
-      })],
+      spacing: { before: 180, after: 60 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: "000000", space: 2 } },
+      children: [new TextRun({ text, bold: true, size: SIZE.heading, font: FONT })],
     });
   }
 
@@ -55,7 +54,7 @@
     const kids = inline(label, Object.assign({}, runOpts, { bold: true }));
     if (dates) {
       kids.push(new TextRun({ text: "\t", size: SIZE.body }));
-      kids.push(new TextRun({ text: dates, size: SIZE.body, font: FONT }));
+      kids.push(new TextRun({ text: dates, size: SIZE.body, font: FONT, color: GREY }));
     }
     return new Paragraph({
       tabStops: [{ type: TabStopType.RIGHT, position: TEXT_WIDTH }],
@@ -86,11 +85,8 @@
       : state.profile.name;
 
     p.push(new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 50 },
-      children: [new TextRun({
-        text: nameText, bold: true, size: SIZE.name, font: FONT, characterSpacing: 30,
-      })],
+      spacing: { after: 60 },
+      children: [new TextRun({ text: nameText, bold: true, size: SIZE.name, font: FONT })],
     }));
 
     // Contact details and links share one centered line.
@@ -109,7 +105,13 @@
       }));
     });
     if (kids.length) {
-      p.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 40 }, children: kids }));
+      p.push(new Paragraph({ spacing: { after: 20 }, children: kids }));
+    }
+    if (state.profile.tagline) {
+      p.push(new Paragraph({
+        spacing: { after: 40 },
+        children: inline(state.profile.tagline, { size: SIZE.tagline, font: FONT }),
+      }));
     }
     return p;
   }
@@ -131,13 +133,21 @@
     if (skills.length) {
       kids.push(sectionHeading("Technical Skills"));
       skills.forEach((g) => {
-        kids.push(new Paragraph({
-          spacing: { before: 15, after: 15, line: 240 },
-          indent: { left: 180, hanging: 180 },
-          children: [
-            new TextRun({ text: g.name + ": ", bold: true, size: SIZE.body, font: FONT }),
-          ].concat(inline(g.items, runOpts)),
-        }));
+        if (g.name) {
+          kids.push(new Paragraph({
+            spacing: { before: 70, after: 20 },
+            indent: { left: 120 },
+            children: [new TextRun({ text: g.name, bold: true, size: SIZE.body, font: FONT })],
+          }));
+        }
+        // Semicolons split a group into separate sub-lines, matching the reference layout.
+        String(g.items || "").split(";").map((x) => x.trim()).filter(Boolean).forEach((line) => {
+          kids.push(new Paragraph({
+            spacing: { before: 0, after: 15, line: 240 },
+            indent: { left: 300, hanging: 130 },
+            children: [new TextRun({ text: "– ", size: SIZE.body, font: FONT })].concat(inline(line, runOpts)),
+          }));
+        });
       });
     }
 
@@ -183,7 +193,7 @@
           levels: [{
             level: 0,
             format: LevelFormat.BULLET,
-            text: "•",
+            text: "·",
             alignment: AlignmentType.LEFT,
             style: { paragraph: { indent: { left: 200, hanging: 160 } } },
           }],

@@ -142,8 +142,17 @@
   function fixedLines() {
     let n = 4;                                                    // header block
     if (plain(state.summary)) n += 2 + Math.ceil(len(state.summary) / 118);
-    const sk = (state.skills || []).filter((g) => g.name || g.items).length;
-    if (sk) n += 2 + sk;
+    // Skills groups now render as a bold label plus one line per semicolon-separated
+    // sub-line, so counting groups alone undercounts badly.
+    const groups = (state.skills || []).filter((g) => g.name || g.items);
+    if (groups.length) {
+      n += 2;
+      groups.forEach((g) => {
+        n += g.name ? 1 : 0;
+        n += String(g.items || "").split(";").filter((x) => x.trim()).length;
+      });
+    }
+    if (plain(state.profile.tagline)) n += 1;
     const ed = (state.education || []).filter((e) => e.degree).length;
     if (ed) n += 2 + ed;
     return n;
@@ -382,7 +391,8 @@
     const bits = (s.profile.contact || []).filter(Boolean).map(esc)
       .concat((s.profile.links || []).filter((l) => l.url)
         .map((l) => '<a href="' + esc(l.url) + '">' + esc(l.label || l.url) + "</a>"));
-    if (bits.length) out.push('<p class="r-contact">' + bits.join("  |  ") + "</p>");
+    if (bits.length) out.push('<p class="r-contact">' + bits.join(" | ") + "</p>");
+    if (s.profile.tagline) out.push('<p class="r-tagline">' + mdHtml(s.profile.tagline) + "</p>");
 
     if (plain(s.summary)) {
       out.push("<h3>Summary</h3><p class='r-sum'>" + mdHtml(s.summary) + "</p>");
@@ -392,9 +402,11 @@
     if (skills.length) {
       out.push("<h3>Technical Skills</h3>");
       skills.forEach((g) => {
-        const over = len((g.name ? g.name + ": " : "") + g.items) > BUDGET.skillLine;
-        out.push('<p class="r-skill' + (over ? " over" : "") + '"><strong>' + esc(g.name) + ":</strong> " +
-          mdHtml(g.items) + "</p>");
+        if (g.name) out.push('<p class="r-skillgroup">' + esc(g.name) + "</p>");
+        String(g.items || "").split(";").map((x) => x.trim()).filter(Boolean).forEach((line) => {
+          const over = len(line) > BUDGET.skillLine;
+          out.push('<p class="r-skill' + (over ? " over" : "") + '">&ndash; ' + mdHtml(line) + "</p>");
+        });
       });
     }
 
@@ -405,7 +417,8 @@
     if (positions.length) {
       out.push("<h3>Experience</h3>");
       positions.forEach(({ p, bl }) => {
-        out.push('<p class="r-head"><span>' + mdHtml(p.theme || p.role) + "</span><span>" + esc(p.dates || "") + "</span></p>");
+        out.push('<p class="r-head"><span>' + mdHtml(p.theme || p.role) +
+          '</span><span class="r-dates">' + esc(p.dates || "") + "</span></p>");
         const sub = [p.theme ? p.role : "", p.org, p.location].filter(Boolean).join(" — ");
         if (sub) out.push('<p class="r-sub">' + esc(sub) + "</p>");
         out.push("<ul>" + bl.map((b) => {
@@ -425,7 +438,7 @@
     if (edu.length) {
       out.push("<h3>Education</h3>");
       edu.forEach((e) => out.push('<p class="r-head"><span>' + mdHtml(e.degree) +
-        "</span><span>" + esc(e.dates || "") + "</span></p>"));
+        '</span><span class="r-dates">' + esc(e.dates || "") + "</span></p>"));
     }
 
     $("#sheet").innerHTML = out.join("");
@@ -433,37 +446,18 @@
     updateBadges();
   }
 
+  /* The old readout ("~57 lines, about 2 pages, 6 bullets past the 2-line limit")
+     was internal bookkeeping leaking into the interface. Users get one plain fact;
+     the detailed budgets stay available per-bullet in the Library. */
   function renderAudit() {
-    const a = [];
-    const items = allItems().filter((i) => chosen.has(i.key));
-    const over = items.filter((i) => gradeBullet(i.text).cls === "bad");
-    const emCount = (plain(state.summary).match(/—/g) || []).length +
-      items.reduce((n, i) => n + (plain(i.text).match(/—/g) || []).length, 0);
-
-    // Rough line estimate: 48 body lines fit a 0.5in-margin Letter page at 10.5pt.
-    let lines = 4;
-    if (plain(state.summary)) lines += 2 + Math.ceil(len(state.summary) / 118);
-    const sk = (state.skills || []).filter((g) => g.name || g.items).length;
-    if (sk) lines += 2 + sk;
-    const pos = (state.positions || []).filter((p, pi) => (p.bullets || []).some((b, bi) => chosen.has("p" + pi + "b" + bi)));
-    if (pos.length) lines += 2 + pos.length * 2;
-    items.forEach((i) => { lines += len(i.text) > BUDGET.bullet.l1[1] ? 2 : 1; });
-    const ed = (state.education || []).filter((e) => e.degree).length;
-    if (ed) lines += 2 + ed;
-    const est = Math.max(1, Math.ceil(lines / 48));
-
-    a.push({ cls: est <= state.pages ? "ok" : "bad",
-      t: "≈" + lines + " lines · about " + est + " page" + (est > 1 ? "s" : "") +
-         (est > state.pages ? " — over your target" : "") });
-    if (items.length) a.push({ cls: "ok", t: items.length + " bullets selected" });
-    if (over.length) a.push({ cls: "bad", t: over.length + " bullet(s) past the 2-line limit" });
-    if (emCount > 2) a.push({ cls: "warn", t: emCount + " em-dashes in prose — 2 or fewer reads more human" });
-    const sn = len(state.summary);
-    const [lo, hi] = BUDGET.summary[state.pages] || BUDGET.summary[1];
-    if (sn && (sn < lo || sn > hi)) a.push({ cls: "warn", t: "Summary " + sn + " chars · target " + lo + "–" + hi });
-
-    $("#audit").innerHTML = a.map((x) => '<span class="a ' + x.cls + '">' + esc(x.t) + "</span>").join("");
+    const n = allItems().filter((i) => chosen.has(i.key)).length;
+    const el = $("#audit");
+    if (!el) return;
+    el.innerHTML = n
+      ? '<span class="a ok">' + n + " bullet" + (n === 1 ? "" : "s") + " on this resume</span>"
+      : '<span class="a warn">No bullets selected yet — score a posting on step 2</span>';
   }
+
 
   // ─────────────────────────── document ingest ───────────────────────────
 
@@ -683,7 +677,9 @@
       fetch("data/sample.json").then((r) => r.json()).then((d) => {
         state = Object.assign(blank(), d);
         state._sample = true;         // dropping real files replaces this rather than merging
-        chosen = new Set(allItems().map((i) => i.key));
+        // Fit to the page even without a posting, so the sample shows a real resume
+        // rather than every bullet at once.
+        autoSelectToFit(allItems().map((i) => Object.assign({ score: 1 }, i)));
         save(); renderLibrary(); render();
         goto("p-upload");
       }).catch(() => alert("Could not load the sample file."));

@@ -62,8 +62,24 @@ character limits in the other become wrong.
 Counting is done on *rendered* length: `plain()` strips `**bold**`, `*italic*` and `[label](url)` markers before
 measuring, so `**Python**` is 6 characters.
 
-**Line estimation** uses `LINES_PER_PAGE = 48` and `fixedLines()`. It's an estimate; the audit strip warns but
-cannot guarantee. Real verification is exporting and looking.
+**Line estimation** uses `LINES_PER_PAGE = 48` and `fixedLines()`. It's an estimate. The interface deliberately
+does *not* show it — an earlier version printed "≈57 lines · about 2 pages · 6 bullets past the 2-line limit",
+which is internal bookkeeping and read as noise. Users see one fact ("7 bullets on this resume"); per-bullet
+budgets stay visible in the Library where they are actionable. Real verification is `workflows/verify_export.md`.
+
+## Visual standard
+
+The layout deliberately matches the reference documents in the originating CLI kit
+(`resume_builder/examples/example_resume.pdf`): left-aligned serif name, contact and tagline stacked beneath,
+Title-Case section headings with a rule underneath, skills as a bold group label followed by `–` prefixed
+sub-lines, `·` bullets, and dates right-aligned in grey.
+
+**Semicolons in a skills group split it into sub-lines.** `"Python, SQL – pipelines; Query optimisation"`
+renders as two `–` lines under one bold label. This is why `fixedLines()` counts sub-lines rather than groups —
+counting groups alone undercounts the page badly.
+
+`styles.css .sheet` and `docxgen.js` implement the same layout twice, in CSS and in OOXML. Change one and you
+must change the other, or the preview stops predicting the export.
 
 ## Formatting markers
 
