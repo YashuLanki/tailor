@@ -285,3 +285,29 @@ footer a { color: var(--accent); }
 .row.nowrap { flex-wrap: nowrap; }
 .row.nowrap input { flex: 1; min-width: 0; }
 .row.nowrap button { flex: none; }
+
+/* ── count badges on section headers ── */
+.badge {
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  padding: 2px 7px; border-radius: 20px;
+  background: var(--line-2); color: var(--ink-3);
+  vertical-align: 1px;
+}
+.badge.on { background: var(--accent-soft); color: #12379e; }
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+
+/* ── small collapsed explanation ── */
+.note { margin: 0 0 14px; font-size: 13px; }
+.note > summary {
+  cursor: pointer; list-style: none; color: var(--ink-3);
+  display: inline-block; padding: 2px 0;
+}
+.note > summary::-webkit-details-marker { display: none; }
+.note > summary::before { content: "?"; display: inline-grid; place-items: center;
+  width: 15px; height: 15px; margin-right: 7px; border-radius: 50%;
+  background: var(--line-2); color: var(--ink-3); font-size: 10.5px; }
+.note > summary:hover { color: var(--ink); }
+.note p { margin: 7px 0 0; color: var(--ink-2); max-width: 66ch; }
+
+.card.tight { padding: 14px 16px; }
+.card.tight .hint:empty { display: none; }

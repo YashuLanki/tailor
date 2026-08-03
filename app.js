@@ -167,6 +167,7 @@
         '<span class="score ' + tier + '">' + s.score + "</span></div>";
     }).join("");
     $("#match-card").hidden = false;
+    $("#match-card").open = true;
 
     // Terms the JD stresses that no bullet mentions.
     const covered = new Set();
@@ -280,15 +281,43 @@
     $("#f-pages").value = String(state.pages || 1);
     renderLinks();
     renderSkills(); renderPositions(); renderProjects(); renderEducation();
-    updateSummaryCount();
+    updateBadges();
   }
 
   function updateSummaryCount() {
     const n = len(state.summary);
     const [lo, hi] = BUDGET.summary[state.pages] || BUDGET.summary[1];
     const el = $("#sum-count");
-    el.textContent = n + " chars · target " + lo + "–" + hi;
-    el.style.color = !n ? "" : (n < lo || n > hi) ? "var(--warn)" : "var(--good)";
+    if (!el) return;
+    el.textContent = n ? n : "0";
+    el.title = "target " + lo + "–" + hi + " characters";
+    el.className = "badge" + (!n ? "" : (n < lo || n > hi) ? " warn" : " on");
+  }
+
+  /** Keep the collapsed section headers honest about what's inside them. */
+  function updateBadges() {
+    const set = (id, txt, cls) => {
+      const el = $("#" + id);
+      if (!el) return;
+      el.textContent = txt;
+      el.className = "badge" + (cls ? " " + cls : "");
+    };
+    const bullets = (state.positions || []).reduce((n, p) =>
+      n + (p.bullets || []).filter((b) => plain(b.text)).length, 0);
+    const skills = (state.skills || []).filter((g) => g.name || g.items).length;
+    const projects = (state.projects || []).filter((p) => plain(p.text)).length;
+    const edu = (state.education || []).filter((e) => e.degree).length;
+    const positions = (state.positions || []).filter((p) => p.role || p.org || p.theme).length;
+
+    set("skills-badge", skills, skills ? "on" : "");
+    set("pos-badge", positions + " · " + bullets + " bullets", positions ? "on" : "");
+    set("proj-badge", projects, projects ? "on" : "");
+    set("edu-badge", edu, edu ? "on" : "");
+
+    const total = bullets + projects;
+    set("lib-badge", total ? total + " bullets" : "empty", total ? "on" : "warn");
+    set("sel-badge", chosen.size + " on", chosen.size ? "on" : "warn");
+    updateSummaryCount();
   }
 
   // ─────────────────────────── preview + audit ───────────────────────────
@@ -362,6 +391,7 @@
 
     $("#sheet").innerHTML = out.join("");
     renderAudit();
+    updateBadges();
   }
 
   function renderAudit() {
@@ -463,9 +493,7 @@
       save(); renderLibrary(); render();
       $("#review-card").open = true;
 
-      const n = allItems().length;
-      $("#review-note").innerHTML = "<strong>" + n + " bullets and projects imported.</strong> " +
-        "Parsing is heuristic, so skim this once — fix anything wrong and it stays fixed for every application.";
+      updateBadges();
     }
   }
 
@@ -616,9 +644,6 @@
         state._sample = true;         // dropping real files replaces this rather than merging
         chosen = new Set(allItems().map((i) => i.key));
         save(); renderLibrary(); render();
-        $("#review-card").open = true;
-        $("#review-note").innerHTML = "<strong>Sample profile loaded</strong> — a fictional analyst, so you can " +
-          "see the whole flow. Drop your own documents above and this is replaced.";
         goto("p-upload");
       }).catch(() => alert("Could not load the sample file."));
       return;
