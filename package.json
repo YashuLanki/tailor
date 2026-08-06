@@ -1,0 +1,24 @@
+{
+  "name": "claude-resume-kit",
+  "version": "1.0.0",
+  "description": "Most AI resume tools work the same way: paste resume + paste JD, get a rewrite. They don't know which of your papers is published vs. under review. They don't know you only ran the simulations, not the experiments. They'll upgrade \"contributed to\" into \"developed\" without blinking.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ARPeeketi/claude-resume-kit.git"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ARPeeketi/claude-resume-kit/issues"
+  },
+  "homepage": "https://github.com/ARPeeketi/claude-resume-kit#readme",
+  "dependencies": {
+    "docx": "^9.7.1",
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^6.2.108"
+  }
+}

@@ -1,182 +1,174 @@
-<div align="center">
+# Tailor — powered by claude-resume-kit
 
-# ◆ Tailor
+> This repo previously hosted a browser-based resume-tailoring web app. That app is retired — it had
+> parsing edge cases that made it unreliable, so I moved to a more robust approach: a Claude Code
+> skill kit that does the same job (tailor a resume to a job posting, without letting AI fabricate
+> anything) but reads your source material directly and generates real Word documents instead of
+> parsing them in the browser.
 
-### Drop your documents. Paste a link. Export a resume.
-
-**No forms. No account. No server.**
-Your files are parsed in your browser and never leave your machine.
-
-[**→ Try it live**](https://yashulanki.github.io/tailor/)
-
-<sub>Vanilla JS · zero build step · nothing to install</sub>
-
-</div>
-
----
-
-## The problem with AI resume tools
-
-Paste your resume, paste a job description, get a rewrite. You can't see what changed or why, and they will
-quietly promote "supported" into "led." The output reads fluent and says things you can't defend in an interview.
-
-**Tailor never writes anything.** It reads what you already wrote, scores it against the posting, and shows you
-the scores. Choosing what goes on the page stays your decision — made from evidence instead of vibes.
-
-It also tells you what you *don't* have. The gap panel lists terms the posting stresses that appear in none of
-your bullets. That's the honest input to a cover letter, not a prompt to embellish.
+This repo is my working copy of **[claude-resume-kit](https://github.com/ARPeeketi/claude-resume-kit)**,
+an open-source Claude Code skill kit by [Akhil Reddy Peeketi](https://github.com/ARPeeketi) (MIT License —
+see [Credits](#credits)). I use it for my own job search, and this copy reflects the version I actually run:
+it outputs `.docx`/`.pdf` through a JSON-spec pipeline rather than the original's LaTeX templates (see
+`resume_builder/reference/docx_spec.md` for the full contract). Personal data — my résumé content, job
+descriptions, and generated output — has been stripped out; everything here is the reusable tool plus
+generic placeholder examples.
 
 ---
 
-## Three steps
+## What it does
 
-<table>
-<tr>
-<td width="33%" valign="top">
+Most AI resume tools work the same way: paste resume + paste JD, get a rewrite. They don't know which of
+your papers is published vs. under review. They don't know you only ran the simulations, not the
+experiments. They'll upgrade "contributed to" into "developed" without blinking.
 
-### 1 · Documents
+This is different. You extract your source material (papers, code, reports, past resumes) once — the
+system asks structured questions about each one. After that, every new application is just pointing it at
+a job description. It picks the right achievements, frames them for the audience, enforces accuracy, and
+generates a Word document you can open and edit directly.
 
-Drop in the resumes, cover letters, project reports and transcripts you already have.
+**Knowledge base, not a rewriter.** You extract once. Every application draws from verified source
+material — not a pasted resume that gets "improved."
 
-`.docx` `.pdf` `.txt` `.md` `.tex`
+**Anti-fabrication by design.** Provenance flags on every achievement (published / under review /
+internal). Verb discipline rules prevent overclaiming. A corrections log ensures fixed errors don't
+reappear.
 
-Word files are unzipped and their XML read directly, including hyperlink targets. PDFs go through pdf.js with
-text runs regrouped into lines.
+**AI fingerprint avoidance.** Banned-word lists, structural anti-patterns, and a post-generation scan so
+output reads as human-written.
 
-Drop several at once — a resume and an old CV each fill gaps in the other.
+**Multi-perspective critique.** Reader personas score the resume across 8 dimensions in a fresh context
+window.
 
-</td>
-<td width="33%" valign="top">
-
-### 2 · Job
-
-Paste the posting's link. It's read, then **every bullet is scored** against the actual requirement text, with
-matched terms highlighted.
-
-Weighted term extraction with bigram detection, so `machine learning` survives as a phrase instead of splitting
-into noise.
-
-Plus the gap list: what the posting wants that you haven't shown.
-
-</td>
-<td width="33%" valign="top">
-
-### 3 · Export
-
-A live sheet in Times New Roman at true 8.5″ page width — what you see is what the file contains.
-
-A page-count estimate warns you *before* you find the overflow in Word.
-
-Then `.docx` built in the browser, or print to PDF.
-
-</td>
-</tr>
-</table>
+**Word output, locally built.** No data leaves your machine beyond the Claude Code conversation.
 
 ---
 
-## What makes the output usable
+## How it works
 
-**It respects the page.** Every bullet is measured as you type. One that would spill onto a ragged third line is
-flagged red; one that wraps to a nearly-empty second line is flagged as an orphan — the subtler mistake, and the
-one that reads as careless.
+```
+Your Papers --> /setup-extract --> Extractions --> /setup-build-kb --> Knowledge Base
+                                                                          |
+Job Description --> /make-resume --> Tailored Resume/CV (.docx + .pdf)    |
+                        |              v                                  |
+                   /make-cl --> Cover Letter (.docx + .pdf)               |
+                        |              v                                  |
+                   /critique --> 8-Part Score + AI Scan + Fixes           |
+                        |              v                                  |
+                   /edit-resume --> Refined Package                       |
+```
 
-| Element | Target | Hard limit |
-|:--|:--|:--|
-| Bullet — one line | 105–122 | 122 |
-| Bullet — two lines | 195–230 | 230 |
-| Summary — 1-page resume | 290–400 | — |
-| Summary — 2-page resume | 480–560 | — |
-| Skills group line | ≤ 115 | 115 |
-| Position heading | ≤ 62 | 62 |
-
-<sub>Characters, calibrated for Times New Roman 10.5pt on US Letter with 0.5″ margins. Formatting markers don't
-count, so <code>**Python**</code> is 6.</sub>
-
-**It watches your prose, not just your layout.** More than two em-dashes across the document gets flagged — the
-single most reliable tell that a resume was machine-written.
-
-**Formatting is three markers, not a toolbar.**
-
-| Write | Renders |
-|:--|:--|
-| `**text**` | **bold** |
-| `*text*` | *italic* |
-| `[label](url)` | link |
-
-Everything else is literal Unicode. Type `–`, `—`, `%`, `°` directly.
+| Skill | Purpose | Input | Output |
+|-------|---------|-------|--------|
+| `/setup-extract` | Extract structured data from a paper/report | Paper path | `knowledge_base/extractions/*.md` |
+| `/setup-build-kb` | Build KB from extractions | All extractions | `resume_builder/{experience,bundles,support}/` |
+| `/make-resume` | Generate tailored resume or CV | JD path | `output/<Folder>/*.docx` + `.pdf` + session file |
+| `/make-cl` | Generate matching cover letter | Session file | `output/<Folder>/*_cover_letter.docx` |
+| `/edit-resume` | Edit resume/CV/CL from feedback | Session + feedback | Updated spec + rebuilt `.docx` |
+| `/critique` | Independent quality review | Session file | `output/<Folder>/critique_*.md` |
 
 ---
 
-## Privacy, precisely
+## Example output
 
-Parsing, scoring and `.docx` generation all happen in your browser. Your documents are never uploaded. Your
-library lives in `localStorage` on your machine.
+The included example knowledge base is for a fictional researcher (Dr. Jordan Chen, computational
+biologist). The `.tex` files under `resume_builder/examples/output/` are from the original LaTeX pipeline
+and are kept for reference — new runs through this copy produce `.docx`/`.pdf`.
 
-> **One exception, worth stating plainly.** A browser cannot read another site's page unless that site sends
-> permissive CORS headers — and job boards don't. So reading a posting *from a link* routes through a public
-> reader service (`r.jina.ai`, falling back to `corsproxy.io`), which means that service sees the URL you pasted.
-> Nothing of yours is sent, just the posting's address. Prefer **Paste the text instead** and the app makes no
-> network requests at all.
-
----
-
-## Limits
-
-Stated up front, because a tool that hides these wastes your time later.
-
-- **Parsing is heuristic, not AI.** It only moves text you already wrote and never invents a claim — but it will
-  mis-file things. A heading read as an employer, a city merged into a company name. That's why step 1 ends in a
-  review panel: fix it once and it stays fixed for every future application.
-- **Legacy `.doc` is not supported.** Save as `.docx` first.
-- **Scanned PDFs won't work.** pdf.js extracts embedded text; there's no OCR.
-- **Some postings can't be read from a link** — anything behind a login, or a portal that blocks automated reads.
-  Pasting always works.
+- [Example Resume (PDF)](resume_builder/examples/example_resume.pdf)
+- [Example Cover Letter (PDF)](resume_builder/examples/example_cover_letter.pdf)
+- [Example Session File](resume_builder/examples/example_session_file.md)
 
 ---
 
-## Run it locally
+## Setup
 
-No build step, no `npm install`:
+### 1. Install dependencies
 
 ```bash
-git clone https://github.com/YashuLanki/tailor.git
-cd tailor
-python3 -m http.server 8000
+npm install
 ```
 
-Open `http://localhost:8000`. To publish your own copy: fork, then **Settings → Pages → deploy from branch root**.
+### 2. Configure
+
+Edit `config.md` with your details (name, email, provenance flags, role types). See
+`resume_builder/examples/example_config.md` for a complete filled-in example, and fill in
+`resume_builder/templates/fixed_sections.json` with your real header/education (both ship with
+`[placeholder]` values).
+
+### 3. Extract your source material
+
+```
+/setup-extract knowledge_base/papers/my_paper.pdf
+```
+
+Claude reads it, asks clarifying questions about your contributions, and creates a structured extraction.
+Repeat for each source document.
+
+### 4. Build your knowledge base
+
+```
+/setup-build-kb
+```
+
+### 5. Generate for a job
+
+```
+/make-resume JDs/target_job.txt
+```
+
+Then in separate sessions: `/make-cl` for the cover letter, `/critique` for a scored review.
+
+Each step uses a **separate Claude Code session** for best quality (fresh context = less bias).
 
 ---
 
-## Under the hood
+## Prerequisites
 
-```
-index.html          markup and layout
-styles.css          app chrome, plus the resume sheet
-extract.js          document readers (.docx / .pdf / text) and the resume parser
-app.js              state, JD reading, term matching, budget audit, live preview
-docxgen.js          Word generation — a browser port of the CLI builder
-data/sample.json    a fictional profile, for trying the flow
-vendor/             docx · fflate · pdf.js — vendored, so no CDN is ever contacted
-```
-
-The `.docx` writer is a direct port of a command-line builder, so page size, margins, fonts, spacing and
-numbering definitions are identical. What the browser exports is what the CLI exports.
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** CLI installed and authenticated
+- **Node.js** (for `build_docx.js`) and **LibreOffice** (`soffice`, for the `.docx` → `.pdf` conversion step)
+- Your source material ready for extraction
 
 ---
 
-## Contributing / working on this
+## Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** — architecture, the two calibrations that must stay in sync, how to verify a change
-- **[AGENTS.md](AGENTS.md)** — WAT framework (Workflows · Agents · Tools) and a proposed verification harness
+For architecture details, customization tables, the full critique system breakdown, and design decisions,
+see the upstream project's **[DOCS.md](DOCS.md)**.
 
 ---
 
-<div align="center">
+## Credits
 
-**MIT licensed** · see [LICENSE](LICENSE)
+Built on **[claude-resume-kit](https://github.com/ARPeeketi/claude-resume-kit)** by Akhil Reddy Peeketi,
+MIT License. The skill definitions, reference docs, and example knowledge base in this repo originate from
+that project; the DOCX output pipeline (`resume_builder/helpers/build_docx.js`,
+`resume_builder/reference/docx_spec.md`) is a local modification replacing the original's LaTeX renderer.
+Original license text below.
 
-<sub>Built because tailoring forty applications by hand is a worse use of an afternoon than building the tool.</sub>
+```
+MIT License
 
-</div>
+Copyright (c) 2026 Akhil Reddy Peeketi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+This repository's own modifications are licensed under the [LICENSE](LICENSE) in this repo (MIT, © Yashu
+Lanki).

@@ -1,0 +1,49 @@
+{
+  "_comment": "FIXED content — copied VERBATIM into every generated spec. Never rewritten per JD. Listed in config.md under 'FIXED Sections'. Fill this in with your own header/education once you configure the kit — this example uses placeholder values.",
+
+  "header": {
+    "name": "[Your Full Name]",
+    "credential": "[e.g. M.S., or leave blank]",
+    "contact": ["[City, State]", "[Phone]", "[Email]"],
+    "links": [
+      { "label": "Portfolio", "url": "[your portfolio URL]" }
+    ],
+    "_tagline_note": "tagline is GENERATED per JD, not fixed. Target 80-95 chars."
+  },
+
+  "education": {
+    "type": "education",
+    "heading": "Education",
+    "entries": [
+      {
+        "degree": "[Degree], [Field]",
+        "org": "[Institution]",
+        "location": "[City, State]",
+        "dates": "[Month Year] – [Month Year]",
+        "details": [
+          "Coursework: [Course 1], [Course 2], [Course 3]"
+        ]
+      }
+    ]
+  },
+
+  "education_compact": {
+    "_comment": "Use on a tight page-budget resume — drops the coursework detail lines.",
+    "type": "education",
+    "heading": "Education",
+    "entries": [
+      {
+        "degree": "[Degree abbreviation], [Field]",
+        "org": "[Institution]",
+        "location": "[City, State]",
+        "dates": "[Month Year] – [Month Year]"
+      }
+    ]
+  },
+
+  "_rules": {
+    "no_gpa": "Never list numeric GPAs unless you explicitly want them. Prefer honors (e.g. Magna Cum Laude) over raw GPA. See config.md KB Corrections Log.",
+    "degree_order": "Most recent first. Mark in-progress degrees clearly (e.g. 'Anticipated <Month Year>').",
+    "honors_placement": "Decide whether honors live inline in an education entry or in a separate Honors section based on how many you have — one honor rarely earns its own section."
+  }
+}
