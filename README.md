@@ -1,11 +1,3 @@
-# Tailor — powered by claude-resume-kit
-
-> This repo previously hosted a browser-based resume-tailoring web app. That app is retired — it had
-> parsing edge cases that made it unreliable, so I moved to a more robust approach: a Claude Code
-> skill kit that does the same job (tailor a resume to a job posting, without letting AI fabricate
-> anything) but reads your source material directly and generates real Word documents instead of
-> parsing them in the browser.
-
 This repo is my working copy of **[claude-resume-kit](https://github.com/ARPeeketi/claude-resume-kit)**,
 an open-source Claude Code skill kit by [Akhil Reddy Peeketi](https://github.com/ARPeeketi) (MIT License —
 see [Credits](#credits)). I use it for my own job search, and this copy reflects the version I actually run:
